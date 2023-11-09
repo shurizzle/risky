@@ -1,3 +1,4 @@
+pub(crate) mod instructions;
 pub(crate) mod libelf;
 pub(crate) mod libmem;
 
