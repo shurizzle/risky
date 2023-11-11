@@ -395,8 +395,6 @@ pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> 
         }
         68 => {
             // SRAI
-        }
-        _ => {
             let src1: i32 = unsafe {
                 core::mem::transmute(
                     ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs),
@@ -407,6 +405,7 @@ pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> 
                 .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
             *dest = unsafe { core::mem::transmute(src1.wrapping_shr(instruction.imm_shamt)) };
         }
+        _ => {}
     }
     Ok(())
 }
