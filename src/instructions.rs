@@ -21,6 +21,14 @@ pub(crate) struct IeType {
     pub immediate: u32,
 }
 
+pub(crate) struct IsType {
+    pub rd: u32,
+    pub funct3: u32,
+    pub rs1: u32,
+    pub imm_shamt: u32,
+    pub imm_id: u32,
+}
+
 impl RType {
     pub(crate) fn new(rd: u32, funct3: u32, rs1: u32, rs2: u32, funct7: u32) -> Self {
         Self {
@@ -54,6 +62,23 @@ impl IeType {
     }
 }
 
+impl IsType {
+    pub(crate) fn new(rd: u32, funct3: u32, rs1: u32, imm_shamt: u32, imm_id: u32) -> Self {
+        Self {
+            rd,
+            funct3,
+            rs1,
+            imm_shamt,
+            imm_id,
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn id(&self) -> u32 {
+        self.funct3 + self.imm_id
+    }
+}
+
 pub(crate) fn decode_r(encoded: u32) -> RType {
     let rd = bit_extract(encoded, 7, 11);
     let funct3 = bit_extract(encoded, 12, 14);
@@ -69,6 +94,15 @@ pub(crate) fn decode_ie(encoded: u32) -> IeType {
     let rs1 = bit_extract(encoded, 15, 19);
     let immediate = bit_extract(encoded, 20, 31);
     IeType::new(rd, funct3, rs1, immediate)
+}
+
+pub(crate) fn decode_is(encoded: u32) -> IsType {
+    let rd = bit_extract(encoded, 7, 11);
+    let funct3 = bit_extract(encoded, 12, 14);
+    let rs1 = bit_extract(encoded, 15, 19);
+    let shamt = bit_extract(encoded, 20, 24);
+    let immediate = bit_extract(encoded, 25, 32);
+    IsType::new(rd, funct3, rs1, shamt, immediate)
 }
 
 #[inline(always)]
@@ -335,6 +369,45 @@ pub(crate) fn execute_jalr(
         .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
     *dest = *pc + 4;
     *pc += src1 + instruction.immediate;
+    Ok(())
+}
+
+#[inline(always)]
+pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> Result<(), Error> {
+    match instruction.id() {
+        0 => {
+            // SLLI
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+            *dest = src1.wrapping_shl(instruction.imm_shamt);
+        }
+        5 => {
+            // SRLI
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+            *dest = src1.wrapping_shr(instruction.imm_shamt);
+        }
+        68 => {
+            // SRAI
+        }
+        _ => {
+            let src1: i32 = unsafe {
+                core::mem::transmute(
+                    ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs),
+                )
+            };
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+            *dest = src1.wrapping_shr(instruction.imm_shamt) as u32;
+        }
+    }
     Ok(())
 }
 
