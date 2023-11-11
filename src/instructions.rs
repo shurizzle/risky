@@ -324,7 +324,17 @@ pub(crate) fn execute_load(instruction: IeType, regs: &mut Registers<u32>) -> Re
 }
 
 #[inline(always)]
-pub(crate) fn execute_jalr(instruction: IeType, regs: &mut Registers<u32>) -> Result<(), Error> {
+pub(crate) fn execute_jalr(
+    instruction: IeType,
+    regs: &mut Registers<u32>,
+    pc: &mut u32,
+) -> Result<(), Error> {
+    let src1 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+        .fetch_mut(regs)
+        .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+    *dest = *pc + 4;
+    *pc += src1 + instruction.immediate;
     Ok(())
 }
 
