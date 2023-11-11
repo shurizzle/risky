@@ -1,3 +1,21 @@
+pub trait Zero {
+    fn zero() -> Self;
+}
+
+impl Zero for u32 {
+    #[inline(always)]
+    fn zero() -> Self {
+        0
+    }
+}
+
+impl Zero for u64 {
+    #[inline(always)]
+    fn zero() -> Self {
+        0
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Register {
@@ -40,46 +58,52 @@ pub enum ZeroOrRegister {
     Register(Register),
 }
 
+#[repr(transparent)]
 #[derive(Debug)]
-pub struct Registers(pub [u32; 31]);
+pub struct Registers<T>([T; 31]);
 
-// assert registers size
-const _: [(); 0] = [(); {
-    (Register::X31 as usize + 1) * core::mem::size_of::<u32>() - core::mem::size_of::<Registers>()
-}];
+const _: [(); 0] = [(); ((Register::X31 as usize + 1) * core::mem::size_of::<u32>())
+    - core::mem::size_of::<Registers<u32>>()];
 
-impl Registers {
+const _: [(); 0] = [(); ((Register::X31 as usize + 1) * core::mem::size_of::<u64>())
+    - core::mem::size_of::<Registers<u64>>()];
+
+impl<T: Copy + Default> Registers<T> {
     #[inline(always)]
     pub fn new() -> Self {
-        Self([0u32; 31])
+        Self([Default::default(); 31])
     }
+}
 
+impl<T: Copy> Registers<T> {
     #[inline(always)]
     #[cfg(debug_assertions)]
-    pub fn get(&self, reg: Register) -> u32 {
+    pub fn get(&self, reg: Register) -> T {
         self.0[reg as usize]
     }
 
     #[inline(always)]
     #[cfg(not(debug_assertions))]
-    pub fn get(&self, reg: Register) -> u32 {
+    pub fn get(&self, reg: Register) -> T {
         unsafe { *self.0.get_unchecked(reg as usize) }
     }
+}
 
+impl<T> Registers<T> {
     #[inline(always)]
     #[cfg(debug_assertions)]
-    pub fn get_mut(&mut self, reg: Register) -> &mut u32 {
+    pub fn get_mut(&mut self, reg: Register) -> &mut T {
         &mut self.0[reg as usize]
     }
 
     #[inline(always)]
     #[cfg(not(debug_assertions))]
-    pub fn get_mut(&mut self, reg: Register) -> &mut u32 {
+    pub fn get_mut(&mut self, reg: Register) -> &mut T {
         unsafe { self.0.get_unchecked_mut(reg as usize) }
     }
 }
 
-impl Default for Registers {
+impl<T: Copy + Default> Default for Registers<T> {
     #[inline]
     fn default() -> Self {
         Self::new()
@@ -88,47 +112,52 @@ impl Default for Registers {
 
 impl Register {
     #[inline(always)]
-    pub fn fetch(&self, regs: &Registers) -> u32 {
+    pub fn fetch<T: Copy>(&self, regs: &Registers<T>) -> T {
         regs.get(*self)
     }
 
     #[inline(always)]
-    pub fn fetch_mut<'a>(&self, regs: &'a mut Registers) -> &'a mut u32 {
+    pub fn fetch_mut<'a, T>(&self, regs: &'a mut Registers<T>) -> &'a mut T {
         regs.get_mut(*self)
     }
 }
 
 impl ZeroOrRegister {
     #[inline(always)]
-    pub fn fetch(&self, regs: &Registers) -> u32 {
+    pub fn fetch<T: Copy + Zero>(&self, regs: &Registers<T>) -> T {
         match *self {
-            Self::Zero => 0,
-            Self::Register(reg) => regs.get(reg),
+            Self::Zero => Zero::zero(),
+            Self::Register(reg) => reg.fetch(regs),
         }
     }
 
     #[inline(always)]
-    pub fn fetch_mut<'a>(&self, regs: &'a mut Registers) -> Option<&'a mut u32> {
+    pub fn fetch_mut<'a, T>(&self, regs: &'a mut Registers<T>) -> Option<&'a mut T> {
         match *self {
             Self::Zero => None,
-            Self::Register(reg) => Some(regs.get_mut(reg)),
+            Self::Register(reg) => Some(reg.fetch_mut(regs)),
         }
     }
 
     #[inline(always)]
-    pub unsafe fn decode_unchecked(reg: u8) -> Self {
-        debug_assert!(reg < 32, "invalid register number");
-        if reg == 0 {
+    pub unsafe fn decode_unchecked(raw: u8) -> Self {
+        debug_assert!(raw < 32, "invalid register number");
+        if raw == 0 {
             Self::Zero
         } else {
-            Self::Register(unsafe { core::mem::transmute(reg.wrapping_sub(1)) })
+            Self::Register(core::mem::transmute(raw.wrapping_sub(1)))
         }
     }
 
-    #[inline]
-    pub fn decode(reg: u8) -> Option<Self> {
-        if reg < 32 {
-            Some(unsafe { Self::decode_unchecked(reg) })
+    #[inline(always)]
+    pub fn decode_truncate(raw: u8) -> Self {
+        unsafe { Self::decode_unchecked(raw & 0b11111) }
+    }
+
+    #[inline(always)]
+    pub fn decode(raw: u8) -> Option<Self> {
+        if raw < 32 {
+            Some(unsafe { Self::decode_unchecked(raw) })
         } else {
             None
         }
