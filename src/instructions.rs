@@ -3,6 +3,7 @@ use std::{
     io::{Error, ErrorKind},
 };
 
+use crate::libmem;
 use crate::registers::{Registers, ZeroOrRegister};
 
 pub(crate) struct RType {
@@ -71,7 +72,7 @@ pub(crate) fn decode_ie(encoded: u32) -> IeType {
 }
 
 #[inline(always)]
-pub(crate) fn execute_math(instruction: RType, regs: &mut Registers) -> Result<(), Error> {
+pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Result<(), Error> {
     match instruction.id() {
         0 => {
             // add
@@ -228,7 +229,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers) -> Result<(
 }
 
 #[inline(always)]
-pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers) -> Result<(), Error> {
+pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> Result<(), Error> {
     match instruction.id() {
         0 => {
             // ADDI
@@ -280,6 +281,50 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers) -> Result
         }
         _ => {}
     }
+    Ok(())
+}
+
+// TODO: FIX memrxx calls (now reading from empty slice)
+#[inline(always)]
+pub(crate) fn execute_load(instruction: IeType, regs: &mut Registers<u32>) -> Result<(), Error> {
+    match instruction.id() {
+        0 | 4 => {
+            // LB
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+            let addr = src1 + instruction.immediate;
+            *dest = u32::from_le_bytes(libmem::memr32(&[], addr as usize)?);
+        }
+        1 | 5 => {
+            // LH
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+            let addr = src1 + instruction.immediate;
+            *dest = u16::from_le_bytes(libmem::memr16(&[], addr as usize)?) as u32;
+        }
+        2 => {
+            // LW
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+            let addr = src1 + instruction.immediate;
+            *dest = libmem::memr8(&[], addr as usize)? as u32;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[inline(always)]
+pub(crate) fn execute_jalr(instruction: IeType, regs: &mut Registers<u32>) -> Result<(), Error> {
     Ok(())
 }
 
