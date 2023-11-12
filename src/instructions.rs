@@ -27,6 +27,30 @@ pub(crate) struct IsType {
     pub imm_id: u32,
 }
 
+pub(crate) struct SType {
+    pub funct3: u32,
+    pub rs1: u32,
+    pub rs2: u32,
+    pub immediate: u32,
+}
+
+pub(crate) struct BType {
+    pub funct3: u32,
+    pub rs1: u32,
+    pub rs2: u32,
+    pub immediate: u32,
+}
+
+pub(crate) struct UType {
+    pub rd: u32,
+    pub immediate: u32,
+}
+
+pub(crate) struct JType {
+    pub rd: u32,
+    pub immediate: u32,
+}
+
 impl RType {
     pub(crate) fn new(rd: u32, funct3: u32, rs1: u32, rs2: u32, funct7: u32) -> Self {
         Self {
@@ -77,6 +101,48 @@ impl IsType {
     }
 }
 
+impl SType {
+    pub(crate) fn new(funct3: u32, rs1: u32, rs2: u32, immediate: u32) -> Self {
+        Self {
+            funct3,
+            rs1,
+            rs2,
+            immediate,
+        }
+    }
+
+    pub(crate) fn id(&self) -> u32 {
+        self.funct3
+    }
+}
+
+impl BType {
+    pub(crate) fn new(funct3: u32, rs1: u32, rs2: u32, immediate: u32) -> Self {
+        Self {
+            funct3,
+            rs1,
+            rs2,
+            immediate,
+        }
+    }
+
+    pub(crate) fn id(&self) -> u32 {
+        self.immediate
+    }
+}
+
+impl UType {
+    pub(crate) fn new(rd: u32, immediate: u32) -> Self {
+        Self { rd, immediate }
+    }
+}
+
+impl JType {
+    pub(crate) fn new(rd: u32, immediate: u32) -> Self {
+        Self { rd, immediate }
+    }
+}
+
 pub(crate) fn decode_r(encoded: u32) -> RType {
     let rd = bit_extract(encoded, 7, 11);
     let funct3 = bit_extract(encoded, 12, 14);
@@ -101,6 +167,44 @@ pub(crate) fn decode_is(encoded: u32) -> IsType {
     let shamt = bit_extract(encoded, 20, 24);
     let immediate = bit_extract(encoded, 25, 32);
     IsType::new(rd, funct3, rs1, shamt, immediate)
+}
+
+pub(crate) fn decode_s(encoded: u32) -> SType {
+    let imm_5 = bit_extract(encoded, 7, 11);
+    let funct3 = bit_extract(encoded, 12, 14);
+    let rs1 = bit_extract(encoded, 15, 19);
+    let rs2 = bit_extract(encoded, 20, 24);
+    let imm_7 = bit_extract(encoded, 25, 32);
+    let immediate = (imm_7 << 5) | imm_5;
+    SType::new(funct3, rs1, rs2, immediate)
+}
+
+pub(crate) fn decode_b(encoded: u32) -> BType {
+    let imm_11 = bit_extract(encoded, 7, 8);
+    let imm_1_4 = bit_extract(encoded, 8, 11);
+    let funct3 = bit_extract(encoded, 12, 14);
+    let rs1 = bit_extract(encoded, 15, 19);
+    let rs2 = bit_extract(encoded, 20, 24);
+    let imm_5_10 = bit_extract(encoded, 25, 30);
+    let imm_12 = bit_extract(encoded, 31, 32);
+    let immediate = (((((imm_1_4 << 6) | imm_5_10) << 1) | imm_11) << 1) | imm_12;
+    BType::new(funct3, rs1, rs2, immediate)
+}
+
+pub(crate) fn decode_u(encoded: u32) -> UType {
+    let rd = bit_extract(encoded, 7, 11);
+    let immediate = bit_extract(encoded, 12, 31);
+    UType::new(rd, immediate)
+}
+
+pub(crate) fn decode_j(encoded: u32) -> JType {
+    let rd = bit_extract(encoded, 7, 11);
+    let imm_12_19 = bit_extract(encoded, 12, 19);
+    let imm_11 = bit_extract(encoded, 20, 21);
+    let imm_1_10 = bit_extract(encoded, 21, 30);
+    let imm_20 = bit_extract(encoded, 31, 32);
+    let immediate = (((((imm_1_10 << 1) | imm_11) << 8) | imm_12_19) << 1) | imm_20;
+    JType::new(rd, immediate)
 }
 
 #[inline(always)]
@@ -218,7 +322,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shr(src2) as u32;
         }
-        _ => todo!(),
+        _ => return Err(Error::InvalidOpCode),
     };
     Ok(())
 }
@@ -235,8 +339,23 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_add(instruction.immediate);
         }
-        1 | 3 => {
-            // SLTI/U
+        2 => {
+            // SLTI
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::InvalidOpCode)?;
+            let immediate_signed =
+                unsafe { sign_extend(core::mem::transmute(instruction.immediate), 12) };
+            let src1_signed: i32 = unsafe { core::mem::transmute(src1) };
+            match src1_signed.cmp(&immediate_signed) {
+                Ordering::Less => *dest = 1,
+                _ => *dest = 0,
+            }
+        }
+        3 => {
+            // SLTIU
             let src1 =
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
@@ -274,7 +393,7 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1 & instruction.immediate;
         }
-        _ => {}
+        _ => return Err(Error::InvalidOpCode),
     }
     Ok(())
 }
@@ -313,7 +432,7 @@ pub(crate) fn execute_load(instruction: IeType, regs: &mut Registers<u32>) -> Re
             let addr = src1 + instruction.immediate;
             *dest = libmem::memr8(&[], addr as usize)? as u32;
         }
-        _ => {}
+        _ => return Err(Error::InvalidOpCode),
     }
     Ok(())
 }
@@ -329,14 +448,14 @@ pub(crate) fn execute_jalr(
         .fetch_mut(regs)
         .ok_or(Error::InvalidOpCode)?;
     *dest = *pc + 4;
-    *pc += src1 + instruction.immediate;
+    *pc += src1 + sign_extend(unsafe { core::mem::transmute(instruction.immediate) }, 12) as u32;
     Ok(())
 }
 
 #[inline(always)]
 pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> Result<(), Error> {
     match instruction.id() {
-        0 => {
+        1 => {
             // SLLI
             let src1 =
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
@@ -366,8 +485,151 @@ pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> 
                 .ok_or(Error::InvalidOpCode)?;
             *dest = unsafe { core::mem::transmute(src1.wrapping_shr(instruction.imm_shamt)) };
         }
-        _ => {}
+        _ => return Err(Error::InvalidOpCode),
     }
+    Ok(())
+}
+
+#[inline(always)]
+pub(crate) fn execute_store(instruction: SType, regs: &mut Registers<u32>) -> Result<(), Error> {
+    match instruction.id() {
+        0 => {
+            // SB
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs) as u8;
+            let addr = src1 + instruction.immediate;
+            libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
+        }
+        1 => {
+            // SH
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs) as u16;
+            let addr = src1 + instruction.immediate;
+            libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
+        }
+        2 => {
+            // SW
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+            let addr = src1 + instruction.immediate;
+            libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
+        }
+        _ => return Err(Error::InvalidOpCode),
+    }
+    Ok(())
+}
+
+#[inline(always)]
+pub(crate) fn execute_branch(
+    instruction: BType,
+    regs: &mut Registers<u32>,
+    pc: &mut u32,
+) -> Result<(), Error> {
+    match instruction.id() {
+        0 => {
+            // BEQ
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+            if src1 == src2 {
+                let offset = unsafe {
+                    sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 13)
+                };
+                *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+            }
+        }
+        1 => {
+            // BNE
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+            match src1.cmp(&src2) {
+                Ordering::Less | Ordering::Greater => {
+                    let offset = unsafe {
+                        sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 13)
+                    };
+                    *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+                }
+                _ => {}
+            }
+        }
+        4 | 6 => {
+            // BLT/U
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+            if src1 < src2 {
+                let offset = unsafe {
+                    sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 13)
+                };
+                *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+            }
+        }
+        5 | 7 => {
+            // BGE/U
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+            match src1.cmp(&src2) {
+                Ordering::Equal | Ordering::Greater => {
+                    let offset = unsafe {
+                        sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 13)
+                    };
+                    *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+                }
+                _ => {}
+            }
+        }
+        _ => return Err(Error::InvalidOpCode),
+    }
+    Ok(())
+}
+
+#[inline(always)]
+pub(crate) fn execute_lui(instruction: UType, regs: &mut Registers<u32>) -> Result<(), Error> {
+    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+        .fetch_mut(regs)
+        .ok_or(Error::InvalidOpCode)?;
+    *dest = instruction.immediate.wrapping_shl(12);
+    Ok(())
+}
+
+#[inline(always)]
+pub(crate) fn execute_auipc(
+    instruction: UType,
+    regs: &mut Registers<u32>,
+    pc: u32,
+) -> Result<(), Error> {
+    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+        .fetch_mut(regs)
+        .ok_or(Error::InvalidOpCode)?;
+    *dest = pc + instruction.immediate.wrapping_shl(12);
+    Ok(())
+}
+
+#[inline(always)]
+pub(crate) fn execute_jal(
+    instruction: JType,
+    regs: &mut Registers<u32>,
+    pc: &mut u32,
+) -> Result<(), Error> {
+    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+        .fetch_mut(regs)
+        .ok_or(Error::InvalidOpCode)?;
+    *dest = *pc + 4;
+    let offset =
+        unsafe { sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 20) };
+    *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
     Ok(())
 }
 
@@ -450,6 +712,11 @@ const fn bit_extract(src: u32, lo: u32, hi: u32) -> u32 {
     (src >> lo) & ((2 << (hi - lo + 1)) - 1)
 }
 
+fn sign_extend(x: i32, n: u32) -> i32 {
+    let other_bits: u32 = core::mem::size_of::<i32>() as u32 * 8 - n;
+    x.wrapping_shl(other_bits).wrapping_shr(other_bits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -457,7 +724,13 @@ mod tests {
     #[test]
     fn test_bit_extract() {
         assert_eq!(bit_extract(240, 4, 5), 3);
-        // assert_eq!(bit_extract(240, 4, 5), 3);
+    }
+
+    #[test]
+    fn test_bit_extract_single_bit() {
+        let n = 136;
+        let r = bit_extract(n, 3, 4);
+        assert_eq!(r, 1);
     }
 
     #[test]
