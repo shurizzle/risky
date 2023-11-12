@@ -1,8 +1,6 @@
-use std::{
-    cmp::Ordering,
-    io::{Error, ErrorKind},
-};
+use std::cmp::Ordering;
 
+use crate::error::Error;
 use crate::libmem;
 use crate::registers::{Registers, ZeroOrRegister};
 
@@ -116,10 +114,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_add(src2);
         }
         1 => {
@@ -131,10 +126,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 & 0b11111;
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shl(src2);
         }
         2 | 3 => {
@@ -146,10 +138,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 & 0b11111;
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             match src1.cmp(&src2) {
                 Ordering::Less => *dest = 1,
                 _ => *dest = 0,
@@ -164,10 +153,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 & 0b11111;
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1 ^ src2
         }
         5 => {
@@ -179,10 +165,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 & 0b11111;
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shr(src2);
         }
         6 => {
@@ -194,10 +177,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 & 0b11111;
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1 | src2
         }
         7 => {
@@ -209,10 +189,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 & 0b11111;
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1 & src2
         }
         32 => {
@@ -223,10 +200,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_sub(src2);
         }
         37 => {
@@ -241,10 +215,7 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
                 & 0b11111;
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(
-                    ErrorKind::Other,
-                    "zero register is not writable",
-                ))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shr(src2) as u32;
         }
         _ => todo!(),
@@ -261,7 +232,7 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_add(instruction.immediate);
         }
         1 | 3 => {
@@ -270,7 +241,7 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             match src1.cmp(&instruction.immediate) {
                 Ordering::Less => *dest = 1,
                 _ => *dest = 0,
@@ -282,7 +253,7 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1 ^ instruction.immediate;
         }
         6 => {
@@ -291,7 +262,7 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1 | instruction.immediate;
         }
         7 => {
@@ -300,7 +271,7 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1 & instruction.immediate;
         }
         _ => {}
@@ -318,7 +289,7 @@ pub(crate) fn execute_load(instruction: IeType, regs: &mut Registers<u32>) -> Re
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             let addr = src1 + instruction.immediate;
             *dest = u32::from_le_bytes(libmem::memr32(&[], addr as usize)?);
         }
@@ -328,7 +299,7 @@ pub(crate) fn execute_load(instruction: IeType, regs: &mut Registers<u32>) -> Re
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             let addr = src1 + instruction.immediate;
             *dest = u16::from_le_bytes(libmem::memr16(&[], addr as usize)?) as u32;
         }
@@ -338,7 +309,7 @@ pub(crate) fn execute_load(instruction: IeType, regs: &mut Registers<u32>) -> Re
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             let addr = src1 + instruction.immediate;
             *dest = libmem::memr8(&[], addr as usize)? as u32;
         }
@@ -356,7 +327,7 @@ pub(crate) fn execute_jalr(
     let src1 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
     let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
         .fetch_mut(regs)
-        .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+        .ok_or(Error::InvalidOpCode)?;
     *dest = *pc + 4;
     *pc += src1 + instruction.immediate;
     Ok(())
@@ -371,7 +342,7 @@ pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> 
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shl(instruction.imm_shamt);
         }
         5 => {
@@ -380,7 +351,7 @@ pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> 
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shr(instruction.imm_shamt);
         }
         68 => {
@@ -392,7 +363,7 @@ pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> 
             };
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
                 .fetch_mut(regs)
-                .ok_or(Error::new(ErrorKind::Other, "invalid register"))?;
+                .ok_or(Error::InvalidOpCode)?;
             *dest = unsafe { core::mem::transmute(src1.wrapping_shr(instruction.imm_shamt)) };
         }
         _ => {}
@@ -431,7 +402,7 @@ pub(crate) enum InstructionKind {
 }
 
 impl TryFrom<u32> for InstructionKind {
-    type Error = std::io::Error;
+    type Error = Error;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match bit_extract(value, 0, 6) {
@@ -453,7 +424,7 @@ impl TryFrom<u32> for InstructionKind {
             0b0110011 => Ok(InstructionKind::Math),
             0b0001111 => Ok(InstructionKind::Fence),
             0b1110011 => Ok(InstructionKind::System),
-            _ => Err(Error::new(ErrorKind::Unsupported, "bad opcode")),
+            _ => Err(Error::InvalidOpCode),
         }
     }
 }

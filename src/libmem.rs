@@ -1,11 +1,8 @@
-use std::io::{Error, ErrorKind};
+use crate::error::Error;
 
 pub(crate) fn memw(src: &[u8], dest: &mut [u8], addr: usize) -> Result<(), Error> {
     if addr + src.len() > dest.len() {
-        return Err(Error::new(
-            ErrorKind::OutOfMemory,
-            "too many data, out of bounds",
-        ));
+        return Err(Error::InvalidOpCode);
     }
     dest[addr..addr + src.len()].copy_from_slice(src);
     Ok(())
@@ -13,7 +10,7 @@ pub(crate) fn memw(src: &[u8], dest: &mut [u8], addr: usize) -> Result<(), Error
 
 pub(crate) fn memr32(src: &[u8], addr: usize) -> Result<[u8; 4], Error> {
     if addr + 4 > src.len() {
-        return Err(Error::new(ErrorKind::OutOfMemory, "reading out of bounds"));
+        return Err(Error::InvalidOpCode);
     }
     let mut r = [0u8; 4];
     r[0..4].copy_from_slice(&src[addr..addr + 4]);
@@ -22,7 +19,7 @@ pub(crate) fn memr32(src: &[u8], addr: usize) -> Result<[u8; 4], Error> {
 
 pub(crate) fn memr16(src: &[u8], addr: usize) -> Result<[u8; 2], Error> {
     if addr + 4 > src.len() {
-        return Err(Error::new(ErrorKind::OutOfMemory, "reading out of bounds"));
+        return Err(Error::InvalidOpCode);
     }
     let mut r = [0u8; 2];
     r[0..2].copy_from_slice(&src[addr..addr + 2]);
@@ -31,7 +28,7 @@ pub(crate) fn memr16(src: &[u8], addr: usize) -> Result<[u8; 2], Error> {
 
 pub(crate) fn memr8(src: &[u8], addr: usize) -> Result<u8, Error> {
     if addr + 4 > src.len() {
-        return Err(Error::new(ErrorKind::OutOfMemory, "reading out of bounds"));
+        return Err(Error::InvalidOpCode);
     }
     Ok(src[addr])
 }
