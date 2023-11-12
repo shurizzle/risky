@@ -111,64 +111,45 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         0 => {
             // add
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) };
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
             *dest = src1.wrapping_add(src2);
         }
         1 => {
             // SLL (rs2 truncated)
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) }
-                    & 0b11111;
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
-            *dest = src1.overflowing_shl(src2).0;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs)
+                & 0b11111;
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
+            *dest = src1.wrapping_shl(src2);
         }
-        2 => {
-            // SLT
-            let src1: i32 = unsafe {
-                core::mem::transmute(
-                    ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs),
-                )
-            };
-            let src2: i32 = unsafe {
-                core::mem::transmute(
-                    ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs),
-                )
-            };
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
-            match src1.cmp(&src2) {
-                Ordering::Less => *dest = 1,
-                _ => *dest = 0,
-            }
-        }
-        3 => {
-            // SLTU
+        2 | 3 => {
+            // SLT/U
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) }
-                    & 0b11111;
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs)
+                & 0b11111;
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
             match src1.cmp(&src2) {
                 Ordering::Less => *dest = 1,
                 _ => *dest = 0,
@@ -177,85 +158,94 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         4 => {
             // XOR
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) }
-                    & 0b11111;
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs)
+                & 0b11111;
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
             *dest = src1 ^ src2
         }
         5 => {
             // SRL (rs2 truncated)
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) }
-                    & 0b11111;
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
-            *dest = src1.overflowing_shr(src2).0;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs)
+                & 0b11111;
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
+            *dest = src1.wrapping_shr(src2);
         }
         6 => {
             // OR
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) }
-                    & 0b11111;
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs)
+                & 0b11111;
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
             *dest = src1 | src2
         }
         7 => {
             // AND
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) }
-                    & 0b11111;
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs)
+                & 0b11111;
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
             *dest = src1 & src2
         }
         32 => {
             // SUB
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) };
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
             *dest = src1.wrapping_sub(src2);
         }
         37 => {
             // SRA (rs2 truncated)
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs) };
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8).fetch(regs) }
-                    & 0b11111;
-            let dest_reg = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) };
-            let dest = dest_reg.fetch_mut(regs).ok_or(Error::new(
-                ErrorKind::Other,
-                "zero register is not writable",
-            ))?;
-            *dest = src1 >> src2;
+            let src1: i32 = unsafe {
+                core::mem::transmute(
+                    ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs),
+                )
+            };
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                .fetch(regs)
+                & 0b11111;
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                .fetch_mut(regs)
+                .ok_or(Error::new(
+                    ErrorKind::Other,
+                    "zero register is not writable",
+                ))?;
+            *dest = src1.wrapping_shr(src2) as u32;
         }
         _ => todo!(),
     };
