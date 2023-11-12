@@ -4,219 +4,357 @@ use crate::error::Error;
 use crate::libmem;
 use crate::registers::{Registers, ZeroOrRegister};
 
-pub(crate) struct RType {
-    pub rd: u32,
-    pub funct3: u32,
-    pub rs1: u32,
-    pub rs2: u32,
-    pub funct7: u32,
+const B12_MASK: u32 = bitmask(12);
+const B7_MASK: u32 = bitmask(7);
+const B6_MASK: u32 = bitmask(6);
+const B5_MASK: u32 = bitmask(5);
+const B4_MASK: u32 = bitmask(4);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct R {
+    pub funct7: U7,
+    pub rs2: U5,
+    pub rs1: U5,
+    pub funct3: U3,
+    pub rd: U5,
 }
 
-pub(crate) struct IeType {
-    pub rd: u32,
-    pub funct3: u32,
-    pub rs1: u32,
-    pub immediate: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct R4 {
+    pub rs3: U5,
+    pub funct2: U2,
+    pub rs2: U5,
+    pub rs1: U5,
+    pub funct3: U3,
+    pub rd: U5,
 }
 
-pub(crate) struct IsType {
-    pub rd: u32,
-    pub funct3: u32,
-    pub rs1: u32,
-    pub imm_shamt: u32,
-    pub imm_id: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct I {
+    pub imm: U12,
+    pub rs1: U5,
+    pub funct3: U3,
+    pub rd: U5,
 }
 
-pub(crate) struct SType {
-    pub funct3: u32,
-    pub rs1: u32,
-    pub rs2: u32,
-    pub immediate: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Shift {
+    pub prefix: U7,
+    pub shamt: U5,
+    pub rs1: U5,
+    pub funct3: U3,
+    pub rd: U5,
 }
 
-pub(crate) struct BType {
-    pub funct3: u32,
-    pub rs1: u32,
-    pub rs2: u32,
-    pub immediate: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Fence {
+    pub fm: U4,
+    pub pred: U4,
+    pub succ: U4,
+    pub rs1: U5,
+    pub funct3: U3,
+    pub rd: U5,
 }
 
-pub(crate) struct UType {
-    pub rd: u32,
-    pub immediate: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct S {
+    pub imm: U12,
+    pub rs2: U5,
+    pub rs1: U5,
+    pub funct3: U3,
 }
 
-pub(crate) struct JType {
-    pub rd: u32,
-    pub immediate: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct B {
+    pub imm: U13,
+    pub rs2: U5,
+    pub rs1: U5,
+    pub funct3: U3,
 }
 
-impl RType {
-    pub(crate) fn new(rd: u32, funct3: u32, rs1: u32, rs2: u32, funct7: u32) -> Self {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct U {
+    pub imm: u32,
+    pub rd: U5,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct J {
+    pub imm: U21,
+    pub rd: U5,
+}
+
+impl R {
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
         Self {
-            rd,
-            funct3,
-            rs1,
-            rs2,
-            funct7,
+            funct7: unsafe { U7::new_unchecked((value >> 25) as u8) },
+            rs2: U5::new_truncate((value >> 20) as u8),
+            rs1: U5::new_truncate((value >> 15) as u8),
+            funct3: U3::new_truncate((value >> 12) as u8),
+            rd: U5::new_truncate((value >> 7) as u8),
         }
     }
 
     #[inline(always)]
     pub(crate) fn id(&self) -> u32 {
-        self.funct3 + self.funct7
+        self.funct3.as_u32() + self.funct7.as_u32()
     }
 }
 
-impl IeType {
-    pub(crate) fn new(rd: u32, funct3: u32, rs1: u32, immediate: u32) -> Self {
+impl From<u32> for R {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        R::from_u32(value)
+    }
+}
+
+impl R4 {
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
         Self {
-            rd,
-            funct3,
-            rs1,
-            immediate,
+            rs3: unsafe { U5::new_unchecked((value >> 27) as u8) },
+            funct2: U2::new_truncate((value >> 25) as u8),
+            rs2: U5::new_truncate((value >> 20) as u8),
+            rs1: U5::new_truncate((value >> 15) as u8),
+            funct3: U3::new_truncate((value >> 12) as u8),
+            rd: U5::new_truncate((value >> 7) as u8),
+        }
+    }
+}
+
+impl From<u32> for R4 {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        Self::from_u32(value)
+    }
+}
+
+impl I {
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
+        Self {
+            imm: unsafe { U12::new_unchecked((value >> 20) as u16) },
+            rs1: U5::new_truncate((value >> 15) as u8),
+            funct3: U3::new_truncate((value >> 12) as u8),
+            rd: U5::new_truncate((value >> 7) as u8),
         }
     }
 
     #[inline(always)]
     pub(crate) fn id(&self) -> u32 {
-        self.funct3
+        self.funct3.as_u32()
     }
 }
 
-impl IsType {
-    pub(crate) fn new(rd: u32, funct3: u32, rs1: u32, imm_shamt: u32, imm_id: u32) -> Self {
-        Self {
-            rd,
-            funct3,
+impl From<u32> for I {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        Self::from_u32(value)
+    }
+}
+
+impl Shift {
+    #[inline(always)]
+    pub const fn from_i(
+        I {
+            imm,
             rs1,
-            imm_shamt,
-            imm_id,
+            funct3,
+            rd,
+        }: I,
+    ) -> Self {
+        Self {
+            prefix: unsafe { U7::new_unchecked((imm.as_u16() >> 7) as u8) },
+            shamt: U5::new_truncate(imm.as_u16() as u8),
+            rs1,
+            funct3,
+            rd,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
+        Self::from_i(I::from_u32(value))
+    }
+
+    #[inline(always)]
+    pub(crate) fn id(&self) -> u32 {
+        self.funct3.as_u32() + self.prefix.as_u32()
+    }
+}
+
+impl From<I> for Shift {
+    #[inline(always)]
+    fn from(value: I) -> Self {
+        Self::from_i(value)
+    }
+}
+
+impl From<u32> for Shift {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        Self::from_u32(value)
+    }
+}
+
+impl Fence {
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
+        Self {
+            fm: unsafe { U4::new_unchecked((value >> 28) as u8) },
+            pred: U4::new_truncate((value >> 24) as u8),
+            succ: U4::new_truncate((value >> 20) as u8),
+            rs1: U5::new_truncate((value >> 16) as u8),
+            funct3: U3::new_truncate((value >> 12) as u8),
+            rd: U5::new_truncate((value >> 7) as u8),
+        }
+    }
+}
+
+impl From<u32> for Fence {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        Self::from_u32(value)
+    }
+}
+
+impl S {
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
+        Self {
+            imm: unsafe {
+                U12::new_unchecked((((value >> 25) & B7_MASK) | ((value >> 7) & B5_MASK)) as u16)
+            },
+            rs2: U5::new_truncate((value >> 20) as u8),
+            rs1: U5::new_truncate((value >> 15) as u8),
+            funct3: U3::new_truncate((value >> 12) as u8),
         }
     }
 
     #[inline(always)]
     pub(crate) fn id(&self) -> u32 {
-        self.funct3 + self.imm_id
+        self.funct3.as_u32()
     }
 }
 
-impl SType {
-    pub(crate) fn new(funct3: u32, rs1: u32, rs2: u32, immediate: u32) -> Self {
+impl From<u32> for S {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        Self::from_u32(value)
+    }
+}
+
+impl B {
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
         Self {
-            funct3,
-            rs1,
-            rs2,
-            immediate,
+            imm: unsafe {
+                U13::new_unchecked(
+                    (
+                        // 12
+                        (value >> 19) & (1 << 12)
+                        // 11
+                        | (value << 4) & (1 << 11)
+                        // 10:5
+                        | (value >> 20) & (B6_MASK << 5)
+                        // 4:1
+                        | (value >> 7) & (B4_MASK << 1)
+                    ) as u16,
+                )
+            },
+            rs2: U5::new_truncate((value >> 20) as u8),
+            rs1: U5::new_truncate((value >> 15) as u8),
+            funct3: U3::new_truncate((value >> 12) as u8),
         }
     }
 
+    #[inline(always)]
     pub(crate) fn id(&self) -> u32 {
-        self.funct3
+        self.imm.as_u32()
     }
 }
 
-impl BType {
-    pub(crate) fn new(funct3: u32, rs1: u32, rs2: u32, immediate: u32) -> Self {
+impl From<u32> for B {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        Self::from_u32(value)
+    }
+}
+
+impl U {
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
         Self {
-            funct3,
-            rs1,
-            rs2,
-            immediate,
+            imm: value & !B12_MASK,
+            rd: U5::new_truncate((value >> 7) as u8),
         }
     }
+}
 
-    pub(crate) fn id(&self) -> u32 {
-        self.immediate
+impl From<u32> for U {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        Self::from_u32(value)
     }
 }
 
-impl UType {
-    pub(crate) fn new(rd: u32, immediate: u32) -> Self {
-        Self { rd, immediate }
+impl J {
+    #[inline(always)]
+    pub const fn from_u32(value: u32) -> Self {
+        Self {
+            imm: unsafe {
+                U21::new_unchecked(
+                    // 20
+                    ((value & (1 << 31)) >> 11)
+                    // 10:1
+                    | ((value & (0b1111111111 << 21)) >> 20)
+                    // 11
+                    | ((value & (1 << 20)) >> 9)
+                    // 19:12
+                    | (value & (0b11111111 << 12)),
+                )
+            },
+            rd: U5::new_truncate((value >> 7) as u8),
+        }
     }
 }
 
-impl JType {
-    pub(crate) fn new(rd: u32, immediate: u32) -> Self {
-        Self { rd, immediate }
+impl From<u32> for J {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        Self::from_u32(value)
     }
 }
 
-pub(crate) fn decode_r(encoded: u32) -> RType {
-    let rd = bit_extract(encoded, 7, 11);
-    let funct3 = bit_extract(encoded, 12, 14);
-    let rs1 = bit_extract(encoded, 15, 19);
-    let rs2 = bit_extract(encoded, 20, 24);
-    let funct7 = bit_extract(encoded, 25, 31);
-    RType::new(rd, funct3, rs1, rs2, funct7)
-}
+mod __sealed {
+    pub trait Unsigned {
+        type Signed;
+    }
 
-pub(crate) fn decode_ie(encoded: u32) -> IeType {
-    let rd = bit_extract(encoded, 7, 11);
-    let funct3 = bit_extract(encoded, 12, 14);
-    let rs1 = bit_extract(encoded, 15, 19);
-    let immediate = bit_extract(encoded, 20, 31);
-    IeType::new(rd, funct3, rs1, immediate)
-}
+    impl Unsigned for u8 {
+        type Signed = i8;
+    }
 
-pub(crate) fn decode_is(encoded: u32) -> IsType {
-    let rd = bit_extract(encoded, 7, 11);
-    let funct3 = bit_extract(encoded, 12, 14);
-    let rs1 = bit_extract(encoded, 15, 19);
-    let shamt = bit_extract(encoded, 20, 24);
-    let immediate = bit_extract(encoded, 25, 32);
-    IsType::new(rd, funct3, rs1, shamt, immediate)
-}
+    impl Unsigned for u16 {
+        type Signed = i16;
+    }
 
-pub(crate) fn decode_s(encoded: u32) -> SType {
-    let imm_5 = bit_extract(encoded, 7, 11);
-    let funct3 = bit_extract(encoded, 12, 14);
-    let rs1 = bit_extract(encoded, 15, 19);
-    let rs2 = bit_extract(encoded, 20, 24);
-    let imm_7 = bit_extract(encoded, 25, 32);
-    let immediate = (imm_7 << 5) | imm_5;
-    SType::new(funct3, rs1, rs2, immediate)
-}
-
-pub(crate) fn decode_b(encoded: u32) -> BType {
-    let imm_11 = bit_extract(encoded, 7, 8);
-    let imm_1_4 = bit_extract(encoded, 8, 11);
-    let funct3 = bit_extract(encoded, 12, 14);
-    let rs1 = bit_extract(encoded, 15, 19);
-    let rs2 = bit_extract(encoded, 20, 24);
-    let imm_5_10 = bit_extract(encoded, 25, 30);
-    let imm_12 = bit_extract(encoded, 31, 32);
-    let immediate = (((((imm_1_4 << 6) | imm_5_10) << 1) | imm_11) << 1) | imm_12;
-    BType::new(funct3, rs1, rs2, immediate)
-}
-
-pub(crate) fn decode_u(encoded: u32) -> UType {
-    let rd = bit_extract(encoded, 7, 11);
-    let immediate = bit_extract(encoded, 12, 31);
-    UType::new(rd, immediate)
-}
-
-pub(crate) fn decode_j(encoded: u32) -> JType {
-    let rd = bit_extract(encoded, 7, 11);
-    let imm_12_19 = bit_extract(encoded, 12, 19);
-    let imm_11 = bit_extract(encoded, 20, 21);
-    let imm_1_10 = bit_extract(encoded, 21, 30);
-    let imm_20 = bit_extract(encoded, 31, 32);
-    let immediate = (((((imm_1_10 << 1) | imm_11) << 8) | imm_12_19) << 1) | imm_20;
-    JType::new(rd, immediate)
+    impl Unsigned for u32 {
+        type Signed = i32;
+    }
 }
 
 #[inline(always)]
-pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Result<(), Error> {
+pub(crate) fn execute_math(instruction: R, regs: &mut Registers<u32>) -> Result<(), Error> {
     match instruction.id() {
         0 => {
             // add
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_add(src2);
@@ -224,11 +362,11 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         1 => {
             // SLL (rs2 truncated)
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs)
                 & 0b11111;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shl(src2);
@@ -236,11 +374,11 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         2 | 3 => {
             // SLT/U
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs)
                 & 0b11111;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             match src1.cmp(&src2) {
@@ -251,11 +389,11 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         4 => {
             // XOR
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs)
                 & 0b11111;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1 ^ src2
@@ -263,11 +401,11 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         5 => {
             // SRL (rs2 truncated)
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs)
                 & 0b11111;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shr(src2);
@@ -275,11 +413,11 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         6 => {
             // OR
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs)
                 & 0b11111;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1 | src2
@@ -287,11 +425,11 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         7 => {
             // AND
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs)
                 & 0b11111;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1 & src2
@@ -299,10 +437,10 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
         32 => {
             // SUB
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_sub(src2);
@@ -311,13 +449,13 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
             // SRA (rs2 truncated)
             let src1: i32 = unsafe {
                 core::mem::transmute(
-                    ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs),
+                    ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()).fetch(regs),
                 )
             };
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs)
                 & 0b11111;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             *dest = src1.wrapping_shr(src2) as u32;
@@ -328,26 +466,25 @@ pub(crate) fn execute_math(instruction: RType, regs: &mut Registers<u32>) -> Res
 }
 
 #[inline(always)]
-pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> Result<(), Error> {
+pub(crate) fn execute_mathi(instruction: I, regs: &mut Registers<u32>) -> Result<(), Error> {
     match instruction.id() {
         0 => {
             // ADDI
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_add(instruction.immediate);
+            *dest = src1.wrapping_add(instruction.imm.as_u32());
         }
         2 => {
             // SLTI
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            let immediate_signed =
-                unsafe { sign_extend(core::mem::transmute(instruction.immediate), 12) };
+            let immediate_signed = unsafe { instruction.imm.sign_extend() as i32 };
             let src1_signed: i32 = unsafe { core::mem::transmute(src1) };
             match src1_signed.cmp(&immediate_signed) {
                 Ordering::Less => *dest = 1,
@@ -357,11 +494,11 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
         3 => {
             // SLTIU
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            match src1.cmp(&instruction.immediate) {
+            match src1.cmp(&instruction.imm.as_u32()) {
                 Ordering::Less => *dest = 1,
                 _ => *dest = 0,
             }
@@ -369,29 +506,29 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
         4 => {
             // XORI
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 ^ instruction.immediate;
+            *dest = src1 ^ instruction.imm.as_u32();
         }
         6 => {
             // ORI
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 | instruction.immediate;
+            *dest = src1 | instruction.imm.as_u32();
         }
         7 => {
             // ANDI
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 & instruction.immediate;
+            *dest = src1 & instruction.imm.as_u32();
         }
         _ => return Err(Error::InvalidOpCode),
     }
@@ -400,36 +537,36 @@ pub(crate) fn execute_mathi(instruction: IeType, regs: &mut Registers<u32>) -> R
 
 // TODO: FIX memrxx calls (now reading from empty slice)
 #[inline(always)]
-pub(crate) fn execute_load(instruction: IeType, regs: &mut Registers<u32>) -> Result<(), Error> {
+pub(crate) fn execute_load(instruction: I, regs: &mut Registers<u32>) -> Result<(), Error> {
     match instruction.id() {
         0 | 4 => {
             // LB
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            let addr = src1 + instruction.immediate;
+            let addr = src1 + instruction.imm.as_u32();
             *dest = u32::from_le_bytes(libmem::memr32(&[], addr as usize)?);
         }
         1 | 5 => {
             // LH
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            let addr = src1 + instruction.immediate;
+            let addr = src1 + instruction.imm.as_u32();
             *dest = u16::from_le_bytes(libmem::memr16(&[], addr as usize)?) as u32;
         }
         2 => {
             // LW
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            let addr = src1 + instruction.immediate;
+            let addr = src1 + instruction.imm.as_u32();
             *dest = libmem::memr8(&[], addr as usize)? as u32;
         }
         _ => return Err(Error::InvalidOpCode),
@@ -439,51 +576,51 @@ pub(crate) fn execute_load(instruction: IeType, regs: &mut Registers<u32>) -> Re
 
 #[inline(always)]
 pub(crate) fn execute_jalr(
-    instruction: IeType,
+    instruction: I,
     regs: &mut Registers<u32>,
     pc: &mut u32,
 ) -> Result<(), Error> {
-    let src1 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+    let src1 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
         .fetch_mut(regs)
         .ok_or(Error::InvalidOpCode)?;
     *dest = *pc + 4;
-    *pc += src1 + sign_extend(unsafe { core::mem::transmute(instruction.immediate) }, 12) as u32;
+    *pc += src1 + unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) } as u32;
     Ok(())
 }
 
 #[inline(always)]
-pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> Result<(), Error> {
+pub(crate) fn execute_shifti(instruction: Shift, regs: &mut Registers<u32>) -> Result<(), Error> {
     match instruction.id() {
         1 => {
             // SLLI
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_shl(instruction.imm_shamt);
+            *dest = src1.wrapping_shl(instruction.shamt.as_u32());
         }
         5 => {
             // SRLI
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_shr(instruction.imm_shamt);
+            *dest = src1.wrapping_shr(instruction.shamt.as_u32());
         }
         68 => {
             // SRAI
             let src1: i32 = unsafe {
                 core::mem::transmute(
-                    ZeroOrRegister::decode_unchecked(instruction.rs1 as u8).fetch(regs),
+                    ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()).fetch(regs),
                 )
             };
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            *dest = unsafe { core::mem::transmute(src1.wrapping_shr(instruction.imm_shamt)) };
+            *dest = unsafe { core::mem::transmute(src1.wrapping_shr(instruction.shamt.as_u32())) };
         }
         _ => return Err(Error::InvalidOpCode),
     }
@@ -491,33 +628,33 @@ pub(crate) fn execute_shifti(instruction: IsType, regs: &mut Registers<u32>) -> 
 }
 
 #[inline(always)]
-pub(crate) fn execute_store(instruction: SType, regs: &mut Registers<u32>) -> Result<(), Error> {
+pub(crate) fn execute_store(instruction: S, regs: &mut Registers<u32>) -> Result<(), Error> {
     match instruction.id() {
         0 => {
             // SB
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs) as u8;
-            let addr = src1 + instruction.immediate;
+            let addr = src1 + instruction.imm.as_u32();
             libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
         }
         1 => {
             // SH
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs) as u16;
-            let addr = src1 + instruction.immediate;
+            let addr = src1 + instruction.imm.as_u32();
             libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
         }
         2 => {
             // SW
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
-            let addr = src1 + instruction.immediate;
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
+            let addr = src1 + instruction.imm.as_u32();
             libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
         }
         _ => return Err(Error::InvalidOpCode),
@@ -527,7 +664,7 @@ pub(crate) fn execute_store(instruction: SType, regs: &mut Registers<u32>) -> Re
 
 #[inline(always)]
 pub(crate) fn execute_branch(
-    instruction: BType,
+    instruction: B,
     regs: &mut Registers<u32>,
     pc: &mut u32,
 ) -> Result<(), Error> {
@@ -535,28 +672,28 @@ pub(crate) fn execute_branch(
         0 => {
             // BEQ
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             if src1 == src2 {
-                let offset = unsafe {
-                    sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 13)
-                };
-                *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+                let offset =
+                    unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) }
+                        as u32;
+                *pc += offset;
             }
         }
         1 => {
             // BNE
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             match src1.cmp(&src2) {
                 Ordering::Less | Ordering::Greater => {
-                    let offset = unsafe {
-                        sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 13)
-                    };
-                    *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+                    let offset =
+                        unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) }
+                            as u32;
+                    *pc += offset;
                 }
                 _ => {}
             }
@@ -564,28 +701,28 @@ pub(crate) fn execute_branch(
         4 | 6 => {
             // BLT/U
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             if src1 < src2 {
-                let offset = unsafe {
-                    sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 13)
-                };
-                *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+                let offset =
+                    unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) }
+                        as u32;
+                *pc += offset;
             }
         }
         5 | 7 => {
             // BGE/U
             let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2 as u8) }.fetch(regs);
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             match src1.cmp(&src2) {
                 Ordering::Equal | Ordering::Greater => {
-                    let offset = unsafe {
-                        sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 13)
-                    };
-                    *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+                    let offset =
+                        unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) }
+                            as u32;
+                    *pc += offset;
                 }
                 _ => {}
             }
@@ -596,233 +733,451 @@ pub(crate) fn execute_branch(
 }
 
 #[inline(always)]
-pub(crate) fn execute_lui(instruction: UType, regs: &mut Registers<u32>) -> Result<(), Error> {
-    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+pub(crate) fn execute_lui(instruction: U, regs: &mut Registers<u32>) -> Result<(), Error> {
+    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
         .fetch_mut(regs)
         .ok_or(Error::InvalidOpCode)?;
-    *dest = instruction.immediate.wrapping_shl(12);
+    *dest = instruction.imm.wrapping_shl(12);
     Ok(())
 }
 
 #[inline(always)]
 pub(crate) fn execute_auipc(
-    instruction: UType,
+    instruction: U,
     regs: &mut Registers<u32>,
     pc: u32,
 ) -> Result<(), Error> {
-    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
         .fetch_mut(regs)
         .ok_or(Error::InvalidOpCode)?;
-    *dest = pc + instruction.immediate.wrapping_shl(12);
+    *dest = pc + instruction.imm.wrapping_shl(12);
     Ok(())
 }
 
 #[inline(always)]
 pub(crate) fn execute_jal(
-    instruction: JType,
+    instruction: J,
     regs: &mut Registers<u32>,
     pc: &mut u32,
 ) -> Result<(), Error> {
-    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd as u8) }
+    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
         .fetch_mut(regs)
         .ok_or(Error::InvalidOpCode)?;
     *dest = *pc + 4;
-    let offset =
-        unsafe { sign_extend(core::mem::transmute::<u32, i32>(instruction.immediate), 20) };
+    let offset = instruction.imm.sign_extend();
     *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
     Ok(())
 }
 
-#[non_exhaustive]
-pub(crate) enum InstructionType {
-    R,
-    Ie,
-    Is,
-    S,
-    B,
-    U,
-    J,
-    Fence,
-    System,
-}
+macro_rules! impl_base {
+    (@def $t:ident, $base:ty) => {
+        #[repr(transparent)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $t($base);
+    };
 
-#[non_exhaustive]
-#[derive(Debug, PartialEq)]
-pub(crate) enum InstructionKind {
-    Lui,
-    Auipc,
-    Jal,
-    Jalr,
-    Branch,
-    Load,
-    Store,
-    MathI,
-    ShiftI,
-    Math,
-    Fence,
-    System,
-}
+    (@minmax $base:ty, $bits:expr) => {
+        pub const BITS: u32 = $bits;
+        pub const MIN: Self = Self(0);
+        pub const BITMASK: $base = (1 << Self::BITS) - 1;
+        pub const MAX: Self = Self(Self::BITMASK);
+    };
 
-impl TryFrom<u32> for InstructionKind {
-    type Error = Error;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match bit_extract(value, 0, 6) {
-            0b0110111 => Ok(InstructionKind::Lui),
-            0b0010111 => Ok(InstructionKind::Auipc),
-            0b1101111 => Ok(InstructionKind::Jal),
-            0b1100111 => Ok(InstructionKind::Jalr),
-            0b1100011 => Ok(InstructionKind::Branch),
-            0b0000011 => Ok(InstructionKind::Load),
-            0b0100011 => Ok(InstructionKind::Store),
-            0b0010011 => {
-                let funct3 = bit_extract(value, 12, 14);
-                if funct3 == 0b001 || funct3 == 0b101 {
-                    Ok(InstructionKind::ShiftI)
-                } else {
-                    Ok(InstructionKind::MathI)
-                }
+    (@new $base:ty) => {
+        #[inline(always)]
+        pub const fn new(value: $base) -> Option<Self> {
+            if value > Self::MAX.0 {
+                None
+            } else {
+                Some(Self(value))
             }
-            0b0110011 => Ok(InstructionKind::Math),
-            0b0001111 => Ok(InstructionKind::Fence),
-            0b1110011 => Ok(InstructionKind::System),
-            _ => Err(Error::InvalidOpCode),
         }
-    }
+
+        #[inline(always)]
+        pub const unsafe fn new_unchecked(value: $base) -> Self {
+            debug_assert!(value <= Self::MAX.0, concat!(stringify!($base), " too large"));
+            Self(value)
+        }
+
+        #[inline(always)]
+        pub const fn new_truncate(value: $base) -> Self {
+            Self(value & Self::BITMASK)
+        }
+    };
+
+    (@sign $t:ident, $base:ty) => {
+        #[inline(always)]
+        pub const fn sign_extend(&self) -> <$base as __sealed::Unsigned>::Signed {
+            const OTHER_BITS: u32 = <$base as __sealed::Unsigned>::Signed::BITS - <$t>::BITS;
+            unsafe { core::mem::transmute::<$base, <$base as __sealed::Unsigned>::Signed>(self.0) }
+                .wrapping_shl(OTHER_BITS).wrapping_shr(OTHER_BITS)
+        }
+    };
+
+    (@const_from_internal $base:ty $(,)?) => {};
+    (@const_from_internal $base:ty, $dt:ty => $dname:ident $(,)?) => {
+        #[inline(always)]
+        pub const fn $dname(value: $dt) -> Self {
+            Self(value as $base)
+        }
+    };
+    (@const_from_internal $base:ty, $dt:ty => $dname:ident, $($tt:tt)+) => {
+        impl_base!(@const_from_internal $base, $dt => $dname);
+        impl_base!(@const_from_internal $base, $($tt)+);
+    };
+    (@const_from_internal $base:ty, $dt:ty > $dmeth:ident => $dname:ident $(,)?) => {
+        #[inline(always)]
+        pub const fn $dname(value: $dt) -> Self {
+            Self(value.$dmeth() as $base)
+        }
+    };
+    (@const_from_internal $base:ty, $dt:ty > $dmeth:ident => $dname:ident, $($tt:tt)+) => {
+        impl_base!(@const_from_internal $base, $dt > $dmeth => $dname);
+        impl_base!(@const_from_internal $base, $($tt)+);
+    };
+    (@const_from $base:ty $(,)*) => {};
+    (@const_from $base:ty, $($tt:tt)+) => {
+        impl_base!(@const_from_internal $base, $($tt)+);
+    };
+
+    (@const_into_internal $(,)?) => {};
+    (@const_into_internal $t:ty => $dname:ident $(,)?) => {
+        #[inline(always)]
+        pub const fn $dname(&self) -> $t {
+            self.0 as $t
+        }
+    };
+    (@const_into_internal $t:ty => $dname:ident, $($tt:tt)+) => {
+        impl_base!(@const_into_internal $t => $dname);
+        impl_base!(@const_into_internal $($tt)+);
+    };
+    (@const_into $($tt:tt)*) => {
+        impl_base!(@const_into_internal $($tt)*);
+    };
+
+    (@from_internal $t:ident, $base:ty $(,)?) => {};
+    (@from_internal $t:ident, $base:ty, $dt:ty => $dname:ident $(,)?) => {
+        impl From<$dt> for $t {
+            #[inline(always)]
+            fn from(value: $dt) -> Self {
+                Self::$dname(value)
+            }
+        }
+    };
+    (@from_internal $t:ident, $base:ty, $dt:ty => $dname:ident, $($tt:tt)+) => {
+        impl_base!(@from_internal $t, $base, $dt => $dname);
+        impl_base!(@from_internal $t, $base, $($tt)+);
+    };
+    (@from_internal $t:ident, $base:ty, $dt:ty > $dmeth:ident => $dname:ident $(,)?) => {
+        impl_base!(@from_internal $t, $base, $dt => $dname);
+    };
+    (@from_internal $t:ident, $base:ty, $dt:ty > $dmeth:ident => $dname:ident, $($tt:tt)+) => {
+        impl_base!(@from_internal $t, $base, $dt > $dmeth => $dname);
+        impl_base!(@from_internal $t, $base, $($tt)+);
+    };
+    (@from $t:ident, $base:ty $(,)*) => {};
+    (@from $t:ident, $base:ty, $($tt:tt)+) => {
+        impl_base!(@from_internal $t, $base, $($tt)+);
+    };
+
+    (@into_internal $t:ident $(,)?) => {};
+    (@into_internal $t:ident, $dt:ty => $dname:ident $(,)?) => {
+        impl From<$t> for $dt {
+            #[inline(always)]
+            fn from(value: $t) -> Self {
+                value.$dname()
+            }
+        }
+    };
+    (@into_internal $t:ident, $base:ty => $dname:ident, $($tt:tt)+) => {
+        impl_base!(@into_internal $t, $base => $dname);
+        impl_base!(@into_internal $t, $($tt)+);
+    };
+    (@into $t:ident $(,)*) => {};
+    (@into $t:ident, $($tt:tt)+) => {
+        impl_base!(@into_internal $t, $($tt)+);
+    };
 }
 
-impl From<InstructionKind> for InstructionType {
-    fn from(value: InstructionKind) -> Self {
-        match value {
-            InstructionKind::Lui | InstructionKind::Auipc => Self::U,
-            InstructionKind::Jal => Self::J,
-            InstructionKind::Jalr | InstructionKind::Load | InstructionKind::MathI => Self::Ie,
-            InstructionKind::ShiftI => InstructionType::Is,
-            InstructionKind::Branch => Self::B,
-            InstructionKind::Store => Self::S,
-            InstructionKind::Math => Self::R,
-            InstructionKind::Fence => Self::Fence,
-            InstructionKind::System => Self::System,
+macro_rules! impl_u8 {
+    ($t:ident, $bits:expr) => {
+        impl_u8!($t, $bits,);
+    };
+    ($t:ident, $bits:expr, $($tt:tt)*) => {
+        impl_base!(@def $t, u8);
+
+        impl $t {
+            impl_base!(@minmax u8, $bits);
+
+            impl_base!(@new u8);
+
+            impl_base!(@sign $t, u8);
+
+            impl_base!(@const_from u8, $($tt)*);
+
+            impl_base!(@const_into u8  => as_u8,
+                                   u16 => as_u16,
+                                   u32 => as_u32,
+                                   u64 => as_u64);
         }
-    }
+
+        impl_base!(@from $t, u8, $($tt)*);
+        impl_base!(@into $t, u8  => as_u8,
+                             u16 => as_u16,
+                             u32 => as_u32,
+                             u64 => as_u64);
+    };
 }
+
+macro_rules! impl_u16 {
+    ($t:ident, $bits:expr) => {
+        impl_u16!($t, $bits,);
+    };
+    ($t:ident, $bits:expr, $($tt:tt)*) => {
+        impl_base!(@def $t, u16);
+
+        impl $t {
+            impl_base!(@minmax u16, $bits);
+
+            impl_base!(@new u16);
+
+            impl_base!(@sign $t, u16);
+
+            impl_base!(@const_from u16,
+                       u8 => from_u8,
+                       $($tt)*);
+
+            impl_base!(@const_into u16 => as_u16,
+                                   u32 => as_u32,
+                                   u64 => as_u64);
+        }
+
+        impl_base!(@from $t, u16,
+                   u8 => from_u8,
+                   $($tt)*);
+
+        impl_base!(@into $t, u16 => as_u16,
+                             u32 => as_u32,
+                             u64 => as_u64);
+    };
+}
+
+macro_rules! impl_u32 {
+    ($t:ident, $bits:expr) => {
+        impl_u32!($t, $bits,);
+    };
+    ($t:ident, $bits:expr, $($tt:tt)*) => {
+        impl_base!(@def $t, u32);
+
+        impl $t {
+            impl_base!(@minmax u32, $bits);
+
+            impl_base!(@new u32);
+
+            impl_base!(@sign $t, u32);
+
+            impl_base!(@const_from u32,
+                       u8 => from_u8,
+                       u16 => from_u16,
+                       $($tt)*);
+
+            impl_base!(@const_into u32 => as_u32,
+                                   u64 => as_u64);
+        }
+
+        impl_base!(@from $t, u32,
+                   u8 => from_u8,
+                   u16 => from_u16,
+                   $($tt)*);
+
+        impl_base!(@into $t, u32 => as_u32,
+                             u64 => as_u64);
+    };
+}
+
+impl_u8!(U2, 2);
+impl_u8!( U3, 3,
+          U2  > as_u8  => from_u2);
+impl_u8!( U4, 4,
+          U2  > as_u8  => from_u2,
+          U3  > as_u8  => from_u3);
+impl_u8!( U5, 5,
+          U2  > as_u8  => from_u2,
+          U3  > as_u8  => from_u3,
+          U4  > as_u8  => from_u4);
+impl_u8!( U7, 7,
+          U2  > as_u8  => from_u2,
+          U3  > as_u8  => from_u3,
+          U4  > as_u8  => from_u4,
+          U5  > as_u8  => from_u5);
+impl_u16!(U12, 12,
+          U2  > as_u8  => from_u2,
+          U3  > as_u8  => from_u3,
+          U4  > as_u8  => from_u4,
+          U5  > as_u8  => from_u5,
+          U7  > as_u8  => from_u7);
+impl_u16!(U13, 13,
+          U2  > as_u8  => from_u2,
+          U3  > as_u8  => from_u3,
+          U4  > as_u8  => from_u4,
+          U5  > as_u8  => from_u5,
+          U7  > as_u8  => from_u7,
+          U12 > as_u16 => from_u12);
+impl_u32!(U21, 21,
+          U2  > as_u8  => from_u2,
+          U3  > as_u8  => from_u3,
+          U4  > as_u8  => from_u4,
+          U5  > as_u8  => from_u5,
+          U7  > as_u8  => from_u7,
+          U12 > as_u16 => from_u12,
+          U13 > as_u16 => from_u13);
 
 #[inline(always)]
-const fn bit_extract(src: u32, lo: u32, hi: u32) -> u32 {
-    (src >> lo) & ((2 << (hi - lo + 1)) - 1)
-}
-
-fn sign_extend(x: i32, n: u32) -> i32 {
-    let other_bits: u32 = core::mem::size_of::<i32>() as u32 * 8 - n;
-    x.wrapping_shl(other_bits).wrapping_shr(other_bits)
+const fn bitmask(bits: u32) -> u32 {
+    (1 << bits) - 1
 }
 
 #[cfg(test)]
+#[allow(clippy::unusual_byte_groupings)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_bit_extract() {
-        assert_eq!(bit_extract(240, 4, 5), 3);
+    fn sign_extend() {
+        assert_eq!(
+            U13::new_truncate(0b1111111111110u16).sign_extend(),
+            unsafe { core::mem::transmute(0b1111111111111110u16) }
+        );
+        assert_eq!(
+            U13::new_truncate(0b0111111111110u16).sign_extend(),
+            unsafe { core::mem::transmute(0b0000111111111110u16) }
+        );
     }
 
     #[test]
-    fn test_bit_extract_single_bit() {
-        let n = 136;
-        let r = bit_extract(n, 3, 4);
-        assert_eq!(r, 1);
+    fn decode_r() {
+        assert_eq!(
+            R::from(0b0000000_00001_00010_000_00100_0110011),
+            R {
+                rd: U5::new_truncate(4),
+                funct3: U3::new_truncate(0),
+                rs1: U5::new_truncate(2),
+                rs2: U5::new_truncate(1),
+                funct7: U7::new_truncate(0)
+            }
+        );
     }
 
     #[test]
-    fn test_instructionkind_from_u32_01() {
-        let opcode: u32 = 0b0110111;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Lui);
+    fn decode_i() {
+        assert_eq!(
+            I::from(0b000000000000_00001_000_00010_0010011),
+            I {
+                rd: U5::new_truncate(2),
+                funct3: U3::new_truncate(0),
+                rs1: U5::new_truncate(1),
+                imm: U12::new_truncate(0),
+            }
+        );
     }
 
     #[test]
-    fn test_instructionkind_from_u32_02() {
-        let opcode: u32 = 0b0010111;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Auipc);
+    fn decode_shift() {
+        assert_eq!(
+            Shift::from(0b000000000011_00001_000_00010_0010011),
+            Shift {
+                rd: U5::new_truncate(2),
+                funct3: U3::new_truncate(0),
+                rs1: U5::new_truncate(1),
+                prefix: U7::new_truncate(0),
+                shamt: U5::new_truncate(3),
+            }
+        );
     }
 
     #[test]
-    fn test_instructionkind_from_u32_03() {
-        let opcode: u32 = 0b1101111;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Jal);
+    fn decode_s() {
+        assert_eq!(
+            S::from(0b0000000_00001_00010_010_00100_0100011),
+            S {
+                funct3: U3::new_truncate(2),
+                imm: U12::new_truncate(4),
+                rs1: U5::new_truncate(2),
+                rs2: U5::new_truncate(1),
+            }
+        );
     }
 
     #[test]
-    fn test_instructionkind_from_u32_04() {
-        let opcode: u32 = 0b1100111;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Jalr);
+    fn decode_b() {
+        assert_eq!(
+            B::from(0b1_000000_00000_00001_000_0000_0_0000000u32),
+            B {
+                imm: U13::new_truncate(0b1_0_000000_0000_0),
+                rs2: U5::new_truncate(0),
+                rs1: U5::new_truncate(1),
+                funct3: U3::new_truncate(0),
+            }
+        );
+
+        assert_eq!(
+            B::from(0b0_111111_00010_00011_000_0000_0_0000000u32),
+            B {
+                imm: U13::new_truncate(0b0_0_111111_0000_0),
+                rs2: U5::new_truncate(2),
+                rs1: U5::new_truncate(3),
+                funct3: U3::new_truncate(0),
+            }
+        );
+
+        assert_eq!(
+            B::from(0b0_000000_00100_00101_000_1111_0_0000000u32),
+            B {
+                imm: U13::new_truncate(0b0_0_000000_1111_0),
+                rs2: U5::new_truncate(4),
+                rs1: U5::new_truncate(5),
+                funct3: U3::new_truncate(0),
+            }
+        );
+
+        assert_eq!(
+            B::from(0b0_000000_00110_00111_000_0000_1_0000000u32),
+            B {
+                imm: U13::new_truncate(0b0_1_000000_0000_0),
+                rs2: U5::new_truncate(6),
+                rs1: U5::new_truncate(7),
+                funct3: U3::new_truncate(0),
+            }
+        );
     }
 
     #[test]
-    fn test_instructionkind_from_u32_05() {
-        let opcode: u32 = 0b1100011;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Branch);
+    fn decode_u() {
+        assert_eq!(
+            U::from(0b00000000000000011000_00010_0010111),
+            U {
+                rd: U5::new_truncate(2),
+                imm: 24u32 << 12,
+            }
+        );
     }
 
     #[test]
-    fn test_instructionkind_from_u32_06() {
-        let opcode: u32 = 0b0000011;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Load);
-    }
+    fn decode_j() {
+        assert_eq!(
+            J::from((0b10000000000100000000 << 12) | (20 << 7)),
+            J {
+                imm: U21::new_truncate(1 << 20 | 1 << 11),
+                rd: U5::new_truncate(20),
+            }
+        );
 
-    #[test]
-    fn test_instructionkind_from_u32_07() {
-        let opcode: u32 = 0b0100011;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Store);
-    }
-
-    #[test]
-    fn test_instructionkind_from_u32_08() {
-        // InstructionKind::MathI, InstructionKind::ShiftI
-        let instruction: u32 = 0b000000000010011;
-        let instruction_kind: InstructionKind = instruction.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::MathI);
-    }
-
-    #[test]
-    fn test_instructionkind_from_u32_09() {
-        // InstructionKind::MathI, InstructionKind::ShiftI
-        let instruction: u32 = 0b101000000010011;
-        println!("{}", bit_extract(instruction, 12, 14));
-        let instruction_kind: InstructionKind = instruction.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::ShiftI);
-    }
-
-    #[test]
-    fn test_instructionkind_from_u32_10() {
-        let opcode: u32 = 0b0110011;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Math);
-    }
-
-    #[test]
-    fn test_instructionkind_from_u32_11() {
-        let opcode: u32 = 0b0001111;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::Fence);
-    }
-
-    #[test]
-    fn test_instructionkind_from_u32_12() {
-        let opcode: u32 = 0b1110011;
-        let instruction_kind: InstructionKind = opcode.try_into().unwrap();
-        assert_eq!(instruction_kind, InstructionKind::System);
-    }
-
-    #[test]
-    fn test_tuple_access() {
-        struct T(u32, u32, u32);
-        let t = T(10, 11, 12);
+        assert_eq!(
+            J::from(0b01111111111011111111 << 12),
+            J {
+                imm: U21::new_truncate(!(1 << 20 | 1 << 11 | 1)),
+                rd: U5::new_truncate(0),
+            },
+        );
     }
 }
