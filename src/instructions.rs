@@ -286,7 +286,7 @@ impl U {
     #[inline(always)]
     pub const fn from_u32(value: u32) -> Self {
         Self {
-            imm: value & !B12_MASK,
+            imm: (value >> 12) & ((2 << 20) + 1),
             rd: U5::new_truncate((value >> 7) as u8),
         }
     }
@@ -583,13 +583,20 @@ pub(crate) fn execute_jalr(
     instruction: I,
     regs: &mut Registers<u32>,
     pc: &mut u32,
+    link: u8,
 ) -> Result<(), Error> {
-    let src1 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-        .fetch_mut(regs)
-        .ok_or(Error::InvalidOpCode)?;
-    *dest = *pc + 4;
-    *pc += src1 + unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) } as u32;
+    match unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }.fetch_mut(regs) {
+        Some(dest) => {
+            *dest = *pc + 4;
+            let src1 =
+                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
+            *pc += src1
+                + unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) } as u32;
+        }
+        None => {
+            *pc = unsafe { ZeroOrRegister::decode_unchecked(link) }.fetch(regs);
+        }
+    };
     Ok(())
 }
 
@@ -767,13 +774,20 @@ pub(crate) fn execute_jal(
     instruction: J,
     regs: &mut Registers<u32>,
     pc: &mut u32,
+    link: &mut u8,
 ) -> Result<(), Error> {
-    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-        .fetch_mut(regs)
-        .ok_or(Error::InvalidOpCode)?;
-    *dest = *pc + 4;
-    let offset = instruction.imm.sign_extend();
-    *pc = pc.saturating_add_signed(offset);
+    match unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }.fetch_mut(regs) {
+        Some(dest) => {
+            *link = instruction.rd.as_u8();
+            *dest = *pc + 4;
+            let offset = instruction.imm.sign_extend();
+            *pc = pc.saturating_add_signed(offset);
+        }
+        None => {
+            let offset = instruction.imm.sign_extend();
+            *pc = pc.saturating_add_signed(offset);
+        }
+    };
     Ok(())
 }
 
