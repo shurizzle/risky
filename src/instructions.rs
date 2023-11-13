@@ -97,7 +97,7 @@ impl R {
     }
 
     #[inline(always)]
-    pub(crate) fn id(&self) -> u32 {
+    fn id(&self) -> u32 {
         self.funct3.as_u32() + self.funct7.as_u32()
     }
 }
@@ -142,7 +142,7 @@ impl I {
     }
 
     #[inline(always)]
-    pub(crate) fn id(&self) -> u32 {
+    fn id(&self) -> u32 {
         self.funct3.as_u32()
     }
 }
@@ -179,7 +179,7 @@ impl Shift {
     }
 
     #[inline(always)]
-    pub(crate) fn id(&self) -> u32 {
+    fn id(&self) -> u32 {
         self.funct3.as_u32() + self.prefix.as_u32()
     }
 }
@@ -233,7 +233,7 @@ impl S {
     }
 
     #[inline(always)]
-    pub(crate) fn id(&self) -> u32 {
+    fn id(&self) -> u32 {
         self.funct3.as_u32()
     }
 }
@@ -270,7 +270,7 @@ impl B {
     }
 
     #[inline(always)]
-    pub(crate) fn id(&self) -> u32 {
+    fn id(&self) -> u32 {
         self.imm.as_u32()
     }
 }
@@ -484,7 +484,7 @@ pub(crate) fn execute_mathi(instruction: I, regs: &mut Registers<u32>) -> Result
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            let immediate_signed = unsafe { instruction.imm.sign_extend() as i32 };
+            let immediate_signed = instruction.imm.sign_extend() as i32;
             let src1_signed: i32 = unsafe { core::mem::transmute(src1) };
             match src1_signed.cmp(&immediate_signed) {
                 Ordering::Less => *dest = 1,
@@ -537,7 +537,11 @@ pub(crate) fn execute_mathi(instruction: I, regs: &mut Registers<u32>) -> Result
 
 // TODO: FIX memrxx calls (now reading from empty slice)
 #[inline(always)]
-pub(crate) fn execute_load(instruction: I, regs: &mut Registers<u32>) -> Result<(), Error> {
+pub(crate) fn execute_load(
+    instruction: I,
+    regs: &mut Registers<u32>,
+    memory: &[u8],
+) -> Result<(), Error> {
     match instruction.id() {
         0 | 4 => {
             // LB
@@ -547,7 +551,7 @@ pub(crate) fn execute_load(instruction: I, regs: &mut Registers<u32>) -> Result<
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             let addr = src1 + instruction.imm.as_u32();
-            *dest = u32::from_le_bytes(libmem::memr32(&[], addr as usize)?);
+            *dest = libmem::memr8(memory, addr as usize)? as u32
         }
         1 | 5 => {
             // LH
@@ -557,7 +561,7 @@ pub(crate) fn execute_load(instruction: I, regs: &mut Registers<u32>) -> Result<
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             let addr = src1 + instruction.imm.as_u32();
-            *dest = u16::from_le_bytes(libmem::memr16(&[], addr as usize)?) as u32;
+            *dest = u16::from_le_bytes(libmem::memr16(memory, addr as usize)?) as u32;
         }
         2 => {
             // LW
@@ -567,7 +571,9 @@ pub(crate) fn execute_load(instruction: I, regs: &mut Registers<u32>) -> Result<
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             let addr = src1 + instruction.imm.as_u32();
-            *dest = libmem::memr8(&[], addr as usize)? as u32;
+            let r = u32::from_le_bytes(libmem::memr32(memory, addr as usize)?);
+            println!("{}", r);
+            *dest = r;
         }
         _ => return Err(Error::InvalidOpCode),
     }
@@ -628,7 +634,11 @@ pub(crate) fn execute_shifti(instruction: Shift, regs: &mut Registers<u32>) -> R
 }
 
 #[inline(always)]
-pub(crate) fn execute_store(instruction: S, regs: &mut Registers<u32>) -> Result<(), Error> {
+pub(crate) fn execute_store(
+    instruction: S,
+    regs: &mut Registers<u32>,
+    memory: &mut [u8],
+) -> Result<(), Error> {
     match instruction.id() {
         0 => {
             // SB
@@ -637,7 +647,7 @@ pub(crate) fn execute_store(instruction: S, regs: &mut Registers<u32>) -> Result
             let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs) as u8;
             let addr = src1 + instruction.imm.as_u32();
-            libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
+            libmem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
         }
         1 => {
             // SH
@@ -646,7 +656,7 @@ pub(crate) fn execute_store(instruction: S, regs: &mut Registers<u32>) -> Result
             let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs) as u16;
             let addr = src1 + instruction.imm.as_u32();
-            libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
+            libmem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
         }
         2 => {
             // SW
@@ -655,7 +665,7 @@ pub(crate) fn execute_store(instruction: S, regs: &mut Registers<u32>) -> Result
             let src2 =
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             let addr = src1 + instruction.imm.as_u32();
-            libmem::memw(&src2.to_le_bytes(), &mut [], addr as usize)?;
+            libmem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
         }
         _ => return Err(Error::InvalidOpCode),
     }
@@ -765,7 +775,7 @@ pub(crate) fn execute_jal(
         .ok_or(Error::InvalidOpCode)?;
     *dest = *pc + 4;
     let offset = instruction.imm.sign_extend();
-    *pc += unsafe { core::mem::transmute::<i32, u32>(offset) };
+    *pc = pc.saturating_add_signed(offset);
     Ok(())
 }
 
@@ -1102,6 +1112,15 @@ mod tests {
             S {
                 funct3: U3::new_truncate(2),
                 imm: U12::new_truncate(4),
+                rs1: U5::new_truncate(2),
+                rs2: U5::new_truncate(1),
+            }
+        );
+        assert_eq!(
+            S::from(0b0000000_00001_00010_011_11000_0100011),
+            S {
+                funct3: U3::new_truncate(3),
+                imm: U12::new_truncate(24),
                 rs1: U5::new_truncate(2),
                 rs2: U5::new_truncate(1),
             }
