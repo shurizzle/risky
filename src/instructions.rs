@@ -571,9 +571,7 @@ pub(crate) fn execute_load(
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
             let addr = src1 + instruction.imm.as_u32();
-            let r = u32::from_le_bytes(libmem::memr32(memory, addr as usize)?);
-            println!("{}", r);
-            *dest = r;
+            *dest = u32::from_le_bytes(libmem::memr32(memory, addr as usize)?);
         }
         _ => return Err(Error::InvalidOpCode),
     }
