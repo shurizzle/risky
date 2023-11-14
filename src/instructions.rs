@@ -271,7 +271,7 @@ impl B {
 
     #[inline(always)]
     fn id(&self) -> u32 {
-        self.imm.as_u32()
+        self.funct3.as_u32()
     }
 }
 
@@ -691,10 +691,8 @@ pub(crate) fn execute_branch(
             let src2 =
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             if src1 == src2 {
-                let offset =
-                    unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) }
-                        as u32;
-                *pc += offset;
+                let offset = instruction.imm.sign_extend() as i32;
+                *pc = pc.saturating_add_signed(offset);
             }
         }
         1 => {
@@ -705,10 +703,8 @@ pub(crate) fn execute_branch(
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             match src1.cmp(&src2) {
                 Ordering::Less | Ordering::Greater => {
-                    let offset =
-                        unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) }
-                            as u32;
-                    *pc += offset;
+                    let offset = instruction.imm.sign_extend() as i32;
+                    *pc = pc.saturating_add_signed(offset);
                 }
                 _ => {}
             }
@@ -720,10 +716,8 @@ pub(crate) fn execute_branch(
             let src2 =
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             if src1 < src2 {
-                let offset =
-                    unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) }
-                        as u32;
-                *pc += offset;
+                let offset = instruction.imm.sign_extend() as i32;
+                *pc = pc.saturating_add_signed(offset);
             }
         }
         5 | 7 => {
@@ -734,10 +728,8 @@ pub(crate) fn execute_branch(
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             match src1.cmp(&src2) {
                 Ordering::Equal | Ordering::Greater => {
-                    let offset =
-                        unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) }
-                            as u32;
-                    *pc += offset;
+                    let offset = instruction.imm.sign_extend() as i32;
+                    *pc = pc.saturating_add_signed(offset);
                 }
                 _ => {}
             }
