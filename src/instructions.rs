@@ -195,7 +195,6 @@ pub(crate) fn execute_mathi(instruction: I, regs: &mut Registers<u32>) -> Result
     Ok(())
 }
 
-// TODO: FIX memrxx calls (now reading from empty slice)
 #[inline(always)]
 pub(crate) fn execute_load(
     instruction: I,
@@ -210,7 +209,7 @@ pub(crate) fn execute_load(
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            let addr = src1 + instruction.imm.as_u32();
+            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
             *dest = mem::memr8(memory, addr as usize)? as u32
         }
         1 | 5 => {
@@ -220,7 +219,7 @@ pub(crate) fn execute_load(
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            let addr = src1 + instruction.imm.as_u32();
+            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
             *dest = u16::from_le_bytes(mem::memr16(memory, addr as usize)?) as u32;
         }
         2 => {
@@ -230,7 +229,7 @@ pub(crate) fn execute_load(
             let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
                 .fetch_mut(regs)
                 .ok_or(Error::InvalidOpCode)?;
-            let addr = src1 + instruction.imm.as_u32();
+            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
             *dest = u32::from_le_bytes(mem::memr32(memory, addr as usize)?);
         }
         _ => return Err(Error::InvalidOpCode),
@@ -250,8 +249,7 @@ pub(crate) fn execute_jalr(
             *dest = *pc + 4;
             let src1 =
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            *pc += src1
-                + unsafe { core::mem::transmute::<i16, u16>(instruction.imm.sign_extend()) } as u32;
+            *pc = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32) & !0b1;
         }
         None => {
             *pc = unsafe { ZeroOrRegister::decode_unchecked(link) }.fetch(regs);
@@ -311,7 +309,7 @@ pub(crate) fn execute_store(
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs) as u8;
-            let addr = src1 + instruction.imm.as_u32();
+            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
             mem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
         }
         1 => {
@@ -320,7 +318,7 @@ pub(crate) fn execute_store(
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
                 .fetch(regs) as u16;
-            let addr = src1 + instruction.imm.as_u32();
+            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
             mem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
         }
         2 => {
@@ -329,7 +327,7 @@ pub(crate) fn execute_store(
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
             let src2 =
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
-            let addr = src1 + instruction.imm.as_u32();
+            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
             mem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
         }
         _ => return Err(Error::InvalidOpCode),
@@ -352,7 +350,7 @@ pub(crate) fn execute_branch(
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             if src1 == src2 {
                 let offset = instruction.imm.sign_extend() as i32;
-                *pc = pc.saturating_add_signed(offset);
+                *pc = pc.wrapping_add_signed(offset);
             }
         }
         1 => {
@@ -364,7 +362,7 @@ pub(crate) fn execute_branch(
             match src1.cmp(&src2) {
                 Ordering::Less | Ordering::Greater => {
                     let offset = instruction.imm.sign_extend() as i32;
-                    *pc = pc.saturating_add_signed(offset);
+                    *pc = pc.wrapping_add_signed(offset);
                 }
                 _ => {}
             }
@@ -377,7 +375,7 @@ pub(crate) fn execute_branch(
                 unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
             if src1 < src2 {
                 let offset = instruction.imm.sign_extend() as i32;
-                *pc = pc.saturating_add_signed(offset);
+                *pc = pc.wrapping_add_signed(offset);
             }
         }
         5 | 7 => {
@@ -389,7 +387,7 @@ pub(crate) fn execute_branch(
             match src1.cmp(&src2) {
                 Ordering::Equal | Ordering::Greater => {
                     let offset = instruction.imm.sign_extend() as i32;
-                    *pc = pc.saturating_add_signed(offset);
+                    *pc = pc.wrapping_add_signed(offset);
                 }
                 _ => {}
             }
@@ -433,11 +431,11 @@ pub(crate) fn execute_jal(
             *link = instruction.rd.as_u8();
             *dest = *pc + 4;
             let offset = instruction.imm.sign_extend();
-            *pc = pc.saturating_add_signed(offset);
+            *pc = pc.wrapping_add_signed(offset);
         }
         None => {
             let offset = instruction.imm.sign_extend();
-            *pc = pc.saturating_add_signed(offset);
+            *pc = pc.wrapping_add_signed(offset);
         }
     };
     Ok(())
