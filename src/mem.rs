@@ -69,6 +69,6 @@ mod tests {
         let data = "hello_world!";
         memw(data.as_bytes(), &mut memory, 0x0).unwrap();
         let read = memr8(&memory, 0x0).unwrap();
-        assert_eq!(read, 'h' as u8);
+        assert_eq!(read as char, 'h');
     }
 }
