@@ -1,201 +1,95 @@
-use std::cmp::Ordering;
-
-use crate::decode::{Shift, B, I, J, R, S, U};
+use crate::decode::{Shift, B, I, J, R, S, U, U12};
 use crate::error::Error;
 use crate::mem;
 use crate::registers::{Registers, ZeroOrRegister};
 
 const OPCODE_SIZE: u32 = 4;
-const B5_MASK: u32 = 0b11111;
 
 #[inline(always)]
 pub(crate) fn execute_math(instruction: R, regs: &mut Registers<u32>) -> Result<(), Error> {
-    match instruction.id() {
-        0 => {
-            // add
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_add(src2);
-        }
-        1 => {
-            // SLL (rs2 truncated)
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs)
-                & B5_MASK;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_shl(src2);
-        }
-        2 | 3 => {
-            // SLT/U
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs)
-                & B5_MASK;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            match src1.cmp(&src2) {
-                Ordering::Less => *dest = 1,
-                _ => *dest = 0,
+    #[inline(always)]
+    fn exec<F>(instruction: R, regs: &mut Registers<u32>, f: F) -> Result<(), Error>
+    where
+        F: Fn(u32, u32) -> u32,
+    {
+        match instruction.rd.into() {
+            ZeroOrRegister::Zero => Err(Error::InvalidOpCode),
+            ZeroOrRegister::Register(reg) => {
+                let src1 = ZeroOrRegister::from_u5(instruction.rs1).fetch(regs);
+                let src2 = ZeroOrRegister::from_u5(instruction.rs2).fetch(regs);
+                *regs.get_mut(reg) = f(src1, src2);
+                Ok(())
             }
         }
-        4 => {
-            // XOR
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs)
-                & B5_MASK;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 ^ src2
-        }
-        5 => {
-            // SRL (rs2 truncated)
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs)
-                & B5_MASK;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_shr(src2);
-        }
-        6 => {
-            // OR
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs)
-                & B5_MASK;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 | src2
-        }
-        7 => {
-            // AND
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs)
-                & B5_MASK;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 & src2
-        }
-        32 => {
-            // SUB
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_sub(src2);
-        }
-        37 => {
-            // SRA (rs2 truncated)
-            let src1: i32 = unsafe {
-                core::mem::transmute(
-                    ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()).fetch(regs),
-                )
-            };
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs)
-                & B5_MASK;
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_shr(src2) as u32;
-        }
+    }
+
+    let f = match instruction.id() {
+        // ADD
+        0 => u32::wrapping_add,
+        // SLL (rs2 truncated)
+        1 => u32::wrapping_shl, // wrapping shl is already masking with (0b11111)
+        // SLT
+        2 => |a, b| unsafe { (core::mem::transmute::<_, i32>(a) < core::mem::transmute(b)) as u32 },
+        // SLTU
+        3 => |a, b| (a < b) as u32,
+        // XOR
+        4 => std::ops::BitXor::bitxor,
+        // SRL (rs2 truncated)
+        5 => u32::wrapping_shr,
+        // OR
+        6 => std::ops::BitOr::bitor,
+        // AND
+        7 => std::ops::BitAnd::bitand,
+        // SUB
+        32 => u32::wrapping_sub,
+        // SRA (rs2 truncated)
+        37 => |a, b| unsafe {
+            core::mem::transmute(core::mem::transmute::<_, i32>(a).wrapping_shr(b))
+        },
         _ => return Err(Error::InvalidOpCode),
     };
-    Ok(())
+
+    exec(instruction, regs, f)
 }
 
 #[inline(always)]
 pub(crate) fn execute_mathi(instruction: I, regs: &mut Registers<u32>) -> Result<(), Error> {
-    match instruction.id() {
-        0 => {
-            // ADDI
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_add(instruction.imm.as_u32());
-        }
-        2 => {
-            // SLTI
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            let immediate_signed = instruction.imm.sign_extend() as i32;
-            let src1_signed: i32 = unsafe { core::mem::transmute(src1) };
-            match src1_signed.cmp(&immediate_signed) {
-                Ordering::Less => *dest = 1,
-                _ => *dest = 0,
+    #[inline(always)]
+    fn exec<F>(instruction: I, regs: &mut Registers<u32>, f: F) -> Result<(), Error>
+    where
+        F: Fn(u32, U12) -> u32,
+    {
+        match instruction.rd.into() {
+            ZeroOrRegister::Zero => Err(Error::InvalidOpCode),
+            ZeroOrRegister::Register(reg) => {
+                let src1 = ZeroOrRegister::from_u5(instruction.rs1).fetch(regs);
+                *regs.get_mut(reg) = f(src1, instruction.imm);
+                Ok(())
             }
         }
-        3 => {
-            // SLTIU
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            match src1.cmp(&instruction.imm.as_u32()) {
-                Ordering::Less => *dest = 1,
-                _ => *dest = 0,
-            }
-        }
-        4 => {
-            // XORI
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 ^ instruction.imm.as_u32();
-        }
-        6 => {
-            // ORI
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 | instruction.imm.as_u32();
-        }
-        7 => {
-            // ANDI
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1 & instruction.imm.as_u32();
-        }
-        _ => return Err(Error::InvalidOpCode),
     }
-    Ok(())
+
+    let f: fn(u32, U12) -> u32 = match instruction.id() {
+        // ADDI
+        0 => |a, b| a.wrapping_add(b.as_u32()),
+        // SLTI
+        2 => |a, b| {
+            let a: i32 = unsafe { core::mem::transmute(a) };
+            let b = b.sign_extend() as i32;
+            (a < b) as u32
+        },
+        // SLTIU
+        3 => |a, b| (a < b.as_u32()) as u32,
+        // XORI
+        4 => |a, b| a ^ b.as_u32(),
+        // ORI
+        5 => |a, b| a | b.as_u32(),
+        // ANDI
+        7 => |a, b| a & b.as_u32(),
+        _ => return Err(Error::InvalidOpCode),
+    };
+
+    exec(instruction, regs, f)
 }
 
 #[inline(always)]
@@ -204,39 +98,63 @@ pub(crate) fn execute_load(
     regs: &mut Registers<u32>,
     memory: &[u8],
 ) -> Result<(), Error> {
-    match instruction.id() {
-        0 | 4 => {
-            // LB
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
-            *dest = mem::memr8(memory, addr as usize)? as u32
-        }
-        1 | 5 => {
-            // LH
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
-            *dest = u16::from_le_bytes(mem::memr16(memory, addr as usize)?) as u32;
-        }
-        2 => {
-            // LW
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
-            *dest = u32::from_le_bytes(mem::memr32(memory, addr as usize)?);
-        }
-        _ => return Err(Error::InvalidOpCode),
+    #[inline(always)]
+    fn exec<F>(instruction: I, regs: &mut Registers<u32>, memory: &[u8], f: F) -> Result<(), Error>
+    where
+        F: Fn(&[u8], usize) -> Result<u32, Error>,
+    {
+        let dest_reg =
+            if let ZeroOrRegister::Register(reg) = ZeroOrRegister::from_u5(instruction.rd) {
+                reg
+            } else {
+                return Err(Error::InvalidOpCode);
+            };
+        let offset = ZeroOrRegister::from_u5(instruction.rs1)
+            .fetch(regs)
+            .wrapping_add_signed(instruction.imm.sign_extend() as i32)
+            as usize;
+        *regs.get_mut(dest_reg) = f(memory, offset)?;
+        Ok(())
     }
+
+    let f: fn(&[u8], usize) -> Result<u32, Error> = match instruction.id() {
+        // LB
+        0b000 => |memory, offset| {
+            mem::memr8(memory, offset)
+                .map(|n| unsafe { core::mem::transmute(core::mem::transmute::<_, i8>(n) as i32) })
+        },
+        // LBU
+        0b100 => |memory, offset| mem::memr8(memory, offset).map(|n| n as u32),
+        // LH
+        0b001 => |memory, offset| {
+            mem::memr16(memory, offset)
+                .map(|n| unsafe { core::mem::transmute(i16::from_le_bytes(n) as i32) })
+        },
+        // LHU
+        0b101 => |memory, offset| mem::memr16(memory, offset).map(|n| u16::from_le_bytes(n) as u32),
+        // LW
+        0b010 => |memory, offset| mem::memr32(memory, offset).map(u32::from_le_bytes),
+        _ => return Err(Error::InvalidOpCode),
+    };
+
+    exec(instruction, regs, memory, f)
+}
+
+#[inline(always)]
+pub(crate) fn execute_jal(
+    instruction: J,
+    regs: &mut Registers<u32>,
+    pc: &mut u32,
+) -> Result<(), Error> {
+    // TODO: The JAL and JALR instructions will generate an instruction-address-misaligned exception if the target
+    //       address is not aligned to a four-byte boundary. (???)
+
+    if let ZeroOrRegister::Register(reg) = instruction.rd.into() {
+        *regs.get_mut(reg) = pc.wrapping_add(OPCODE_SIZE);
+    }
+
+    *pc = (*pc).wrapping_add_signed(instruction.imm.sign_extend());
+
     Ok(())
 }
 
@@ -246,56 +164,54 @@ pub(crate) fn execute_jalr(
     regs: &mut Registers<u32>,
     pc: &mut u32,
 ) -> Result<(), Error> {
-    match unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }.fetch_mut(regs) {
-        Some(dest) => {
-            *dest = pc.wrapping_add(OPCODE_SIZE);
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            *pc = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32) & !0b1;
-        }
-        None => {
-            *pc = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-        }
-    };
+    // TODO: The JAL and JALR instructions will generate an instruction-address-misaligned exception if the target
+    //       address is not aligned to a four-byte boundary. (???)
+
+    let next = ZeroOrRegister::from_u5(instruction.rs1)
+        .fetch(regs)
+        .wrapping_add_signed(instruction.imm.sign_extend() as i32)
+        & !1;
+
+    if let ZeroOrRegister::Register(reg) = ZeroOrRegister::from_u5(instruction.rd) {
+        *regs.get_mut(reg) = pc.wrapping_add(OPCODE_SIZE);
+    }
+
+    *pc = next;
+
     Ok(())
 }
 
 #[inline(always)]
 pub(crate) fn execute_shifti(instruction: Shift, regs: &mut Registers<u32>) -> Result<(), Error> {
-    match instruction.id() {
-        1 => {
-            // SLLI
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_shl(instruction.shamt.as_u32());
-        }
-        5 => {
-            // SRLI
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = src1.wrapping_shr(instruction.shamt.as_u32());
-        }
-        68 => {
-            // SRAI
-            let src1: i32 = unsafe {
-                core::mem::transmute(
-                    ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()).fetch(regs),
-                )
-            };
-            let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
-                .fetch_mut(regs)
-                .ok_or(Error::InvalidOpCode)?;
-            *dest = unsafe { core::mem::transmute(src1.wrapping_shr(instruction.shamt.as_u32())) };
-        }
-        _ => return Err(Error::InvalidOpCode),
+    #[inline(always)]
+    fn exec<F>(instruction: Shift, regs: &mut Registers<u32>, f: F) -> Result<(), Error>
+    where
+        F: Fn(u32, u32) -> u32,
+    {
+        let dest_reg = if let ZeroOrRegister::Register(reg) = instruction.rd.into() {
+            reg
+        } else {
+            return Err(Error::InvalidOpCode);
+        };
+        let src1 = ZeroOrRegister::from_u5(instruction.rs1).fetch(regs);
+        *regs.get_mut(dest_reg) = f(src1, instruction.shamt.as_u32());
+
+        Ok(())
     }
-    Ok(())
+
+    let f: fn(u32, u32) -> u32 = match instruction.id() {
+        // SLLI
+        1 => |a, b| a.wrapping_shl(b),
+        // SRLI
+        5 => |a, b| a.wrapping_shr(b),
+        // SRAI
+        68 => |a, b| unsafe {
+            core::mem::transmute(core::mem::transmute::<_, i32>(a).wrapping_shr(b))
+        },
+        _ => return Err(Error::InvalidOpCode),
+    };
+
+    exec(instruction, regs, f)
 }
 
 #[inline(always)]
@@ -304,37 +220,31 @@ pub(crate) fn execute_store(
     regs: &mut Registers<u32>,
     memory: &mut [u8],
 ) -> Result<(), Error> {
-    match instruction.id() {
-        0 => {
-            // SB
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs) as u8;
-            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
-            mem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
-        }
-        1 => {
-            // SH
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 = unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }
-                .fetch(regs) as u16;
-            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
-            mem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
-        }
-        2 => {
-            // SW
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
-            let addr = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32);
-            mem::memw(&src2.to_le_bytes(), memory, addr as usize)?;
-        }
-        _ => return Err(Error::InvalidOpCode),
+    #[inline(always)]
+    fn exec<const N: usize, F>(
+        instruction: S,
+        regs: &mut Registers<u32>,
+        memory: &mut [u8],
+        f: F,
+    ) -> Result<(), Error>
+    where
+        F: Fn(u32) -> [u8; N],
+    {
+        let src1 = ZeroOrRegister::from_u5(instruction.rs1).fetch(regs);
+        let src2 = ZeroOrRegister::from_u5(instruction.rs2).fetch(regs);
+        let offset = src1.wrapping_add_signed(instruction.imm.sign_extend() as i32) as usize;
+        mem::memw(&f(src2), memory, offset)
     }
-    Ok(())
+
+    match instruction.id() {
+        // SB
+        0b000 => exec(instruction, regs, memory, |n| u8::to_le_bytes(n as u8)),
+        // SH
+        0b001 => exec(instruction, regs, memory, |n| u16::to_le_bytes(n as u16)),
+        // SW
+        0b010 => exec(instruction, regs, memory, u32::to_le_bytes),
+        _ => Err(Error::InvalidOpCode),
+    }
 }
 
 #[inline(always)]
@@ -343,69 +253,43 @@ pub(crate) fn execute_branch(
     regs: &mut Registers<u32>,
     pc: &mut u32,
 ) -> Result<(), Error> {
-    match instruction.id() {
-        0 => {
-            // BEQ
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
-            if src1 == src2 {
-                let offset = instruction.imm.sign_extend() as i32;
-                *pc = pc.wrapping_add_signed(offset);
-            } else {
-                *pc = pc.wrapping_add(OPCODE_SIZE);
-            }
+    #[inline(always)]
+    fn exec<F>(instruction: B, regs: &mut Registers<u32>, pc: &mut u32, f: F) -> Result<(), Error>
+    where
+        F: Fn(u32, u32) -> bool,
+    {
+        let src1 = ZeroOrRegister::from_u5(instruction.rs1).fetch(regs);
+        let src2 = ZeroOrRegister::from_u5(instruction.rs2).fetch(regs);
+        if f(src1, src2) {
+            *pc = pc.wrapping_add_signed(instruction.imm.sign_extend() as i32);
+        } else {
+            *pc = pc.wrapping_add(OPCODE_SIZE);
         }
-        1 => {
-            // BNE
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
-            match src1.cmp(&src2) {
-                Ordering::Less | Ordering::Greater => {
-                    let offset = instruction.imm.sign_extend() as i32;
-                    *pc = pc.wrapping_add_signed(offset);
-                }
-                _ => *pc = pc.wrapping_add(OPCODE_SIZE),
-            }
-        }
-        4 | 6 => {
-            // BLT/U
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
-            if src1 < src2 {
-                let offset = instruction.imm.sign_extend() as i32;
-                *pc = pc.wrapping_add_signed(offset);
-            } else {
-                *pc = pc.wrapping_add(OPCODE_SIZE);
-            }
-        }
-        5 | 7 => {
-            // BGE/U
-            let src1 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs1.as_u8()) }.fetch(regs);
-            let src2 =
-                unsafe { ZeroOrRegister::decode_unchecked(instruction.rs2.as_u8()) }.fetch(regs);
-            match src1.cmp(&src2) {
-                Ordering::Equal | Ordering::Greater => {
-                    let offset = instruction.imm.sign_extend() as i32;
-                    *pc = pc.wrapping_add_signed(offset);
-                }
-                _ => *pc = pc.wrapping_add(OPCODE_SIZE),
-            }
-        }
-        _ => return Err(Error::InvalidOpCode),
+        Ok(())
     }
-    Ok(())
+
+    let f: fn(u32, u32) -> bool = match instruction.id() {
+        // BEQ
+        0b000 => |a, b| a == b,
+        // BNE
+        0b001 => |a, b| a != b,
+        // BLT
+        0b100 => |a, b| unsafe { core::mem::transmute::<_, i32>(a) < core::mem::transmute(b) },
+        // BGE
+        0b101 => |a, b| unsafe { core::mem::transmute::<_, i32>(a) >= core::mem::transmute(b) },
+        // BLTU
+        0b110 => |a, b| a < b,
+        // BGEU
+        0b111 => |a, b| a >= b,
+        _ => return Err(Error::InvalidOpCode),
+    };
+
+    exec(instruction, regs, pc, f)
 }
 
 #[inline(always)]
 pub(crate) fn execute_lui(instruction: U, regs: &mut Registers<u32>) -> Result<(), Error> {
-    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
+    let dest = ZeroOrRegister::from_u5(instruction.rd)
         .fetch_mut(regs)
         .ok_or(Error::InvalidOpCode)?;
     *dest = instruction.imm;
@@ -418,29 +302,9 @@ pub(crate) fn execute_auipc(
     regs: &mut Registers<u32>,
     pc: u32,
 ) -> Result<(), Error> {
-    let dest = unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }
+    let dest = ZeroOrRegister::from_u5(instruction.rd)
         .fetch_mut(regs)
         .ok_or(Error::InvalidOpCode)?;
-    *dest = pc + instruction.imm.wrapping_shl(12);
-    Ok(())
-}
-
-#[inline(always)]
-pub(crate) fn execute_jal(
-    instruction: J,
-    regs: &mut Registers<u32>,
-    pc: &mut u32,
-) -> Result<(), Error> {
-    match unsafe { ZeroOrRegister::decode_unchecked(instruction.rd.as_u8()) }.fetch_mut(regs) {
-        Some(dest) => {
-            *dest = pc.wrapping_add(OPCODE_SIZE);
-            let offset = instruction.imm.sign_extend();
-            *pc = pc.wrapping_add_signed(offset);
-        }
-        None => {
-            let target = instruction.imm.sign_extend();
-            *pc = pc.wrapping_add_signed(target);
-        }
-    };
+    *dest = pc.wrapping_add(instruction.imm);
     Ok(())
 }

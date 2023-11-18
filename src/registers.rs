@@ -1,3 +1,5 @@
+use crate::decode::U5;
+
 pub trait Zero {
     fn zero() -> Self;
 }
@@ -140,7 +142,7 @@ impl ZeroOrRegister {
     }
 
     #[inline(always)]
-    pub unsafe fn decode_unchecked(raw: u8) -> Self {
+    pub const unsafe fn decode_unchecked(raw: u8) -> Self {
         debug_assert!(raw < 32, "invalid register number");
         if raw == 0 {
             Self::Zero
@@ -150,17 +152,29 @@ impl ZeroOrRegister {
     }
 
     #[inline(always)]
-    pub fn decode_truncate(raw: u8) -> Self {
+    pub const fn decode_truncate(raw: u8) -> Self {
         unsafe { Self::decode_unchecked(raw & 0b11111) }
     }
 
     #[inline(always)]
-    pub fn decode(raw: u8) -> Option<Self> {
+    pub const fn decode(raw: u8) -> Option<Self> {
         if raw < 32 {
             Some(unsafe { Self::decode_unchecked(raw) })
         } else {
             None
         }
+    }
+
+    #[inline(always)]
+    pub const fn from_u5(value: U5) -> Self {
+        unsafe { Self::decode_unchecked(value.as_u8()) }
+    }
+}
+
+impl From<U5> for ZeroOrRegister {
+    #[inline(always)]
+    fn from(value: U5) -> Self {
+        Self::from_u5(value)
     }
 }
 
