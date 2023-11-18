@@ -18,6 +18,7 @@ impl Zero for u64 {
     }
 }
 
+#[allow(dead_code)]
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Register {
@@ -151,11 +152,13 @@ impl ZeroOrRegister {
         }
     }
 
+    #[allow(dead_code)]
     #[inline(always)]
     pub const fn decode_truncate(raw: u8) -> Self {
         unsafe { Self::decode_unchecked(raw & 0b11111) }
     }
 
+    #[allow(dead_code)]
     #[inline(always)]
     pub const fn decode(raw: u8) -> Option<Self> {
         if raw < 32 {
