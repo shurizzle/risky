@@ -22,29 +22,32 @@ pub(crate) fn execute_math(instruction: R, regs: &mut Registers<u32>) -> Result<
         }
     }
 
-    let f = match instruction.id() {
+    #[allow(clippy::unusual_byte_groupings)]
+    let f = match instruction.id().as_u16() {
         // ADD
-        0 => u32::wrapping_add,
-        // SLL (rs2 truncated)
-        1 => u32::wrapping_shl, // wrapping shl is already masking with (0b11111)
-        // SLT
-        2 => |a, b| unsafe { (core::mem::transmute::<_, i32>(a) < core::mem::transmute(b)) as u32 },
-        // SLTU
-        3 => |a, b| (a < b) as u32,
-        // XOR
-        4 => std::ops::BitXor::bitxor,
-        // SRL (rs2 truncated)
-        5 => u32::wrapping_shr,
-        // OR
-        6 => std::ops::BitOr::bitor,
-        // AND
-        7 => std::ops::BitAnd::bitand,
+        0b0000000_000 => u32::wrapping_add,
         // SUB
-        32 => u32::wrapping_sub,
+        0b0100000_000 => u32::wrapping_sub,
+        // SLL (rs2 truncated)
+        0b0000000_001 => u32::wrapping_shl, // wrapping shl is already masking with (0b11111)
+        // SLT
+        0b0000000_010 => {
+            |a, b| unsafe { (core::mem::transmute::<_, i32>(a) < core::mem::transmute(b)) as u32 }
+        }
+        // SLTU
+        0b0000000_011 => |a, b| (a < b) as u32,
+        // XOR
+        0b0000000_100 => std::ops::BitXor::bitxor,
+        // SRL (rs2 truncated)
+        0b0000000_101 => u32::wrapping_shr,
         // SRA (rs2 truncated)
-        37 => |a, b| unsafe {
+        0b0100000_101 => |a, b| unsafe {
             core::mem::transmute(core::mem::transmute::<_, i32>(a).wrapping_shr(b))
         },
+        // OR
+        0b0000000_110 => std::ops::BitOr::bitor,
+        // AND
+        0b0000000_111 => std::ops::BitAnd::bitand,
         _ => return Err(Error::InvalidOpCode),
     };
 
@@ -68,7 +71,7 @@ pub(crate) fn execute_mathi(instruction: I, regs: &mut Registers<u32>) -> Result
         }
     }
 
-    let f: fn(u32, U12) -> u32 = match instruction.id() {
+    let f: fn(u32, U12) -> u32 = match instruction.id().as_u8() {
         // ADDI
         0 => |a, b| a.wrapping_add(b.as_u32()),
         // SLTI
@@ -124,7 +127,7 @@ pub(crate) fn execute_load(
         Ok(())
     }
 
-    match instruction.id() {
+    match instruction.id().as_u8() {
         // LB
         0b000 => exec(instruction, regs, memory, |n: i8| unsafe {
             core::mem::transmute(n as i32)
@@ -202,13 +205,14 @@ pub(crate) fn execute_shifti(instruction: Shift, regs: &mut Registers<u32>) -> R
         Ok(())
     }
 
-    let f: fn(u32, u32) -> u32 = match instruction.id() {
+    #[allow(clippy::unusual_byte_groupings)]
+    let f: fn(u32, u32) -> u32 = match instruction.id().as_u16() {
         // SLLI
-        1 => |a, b| a.wrapping_shl(b),
+        0b0000000_001 => |a, b| a.wrapping_shl(b),
         // SRLI
-        5 => |a, b| a.wrapping_shr(b),
+        0b0000000_101 => |a, b| a.wrapping_shr(b),
         // SRAI
-        68 => |a, b| unsafe {
+        0b0100000_101 => |a, b| unsafe {
             core::mem::transmute(core::mem::transmute::<_, i32>(a).wrapping_shr(b))
         },
         _ => return Err(Error::InvalidOpCode),
@@ -242,7 +246,7 @@ pub(crate) fn execute_store(
         mem::write(&f(src2), memory, offset)
     }
 
-    match instruction.id() {
+    match instruction.id().as_u8() {
         // SB
         0b000 => exec(instruction, regs, memory, |n| n as u8),
         // SH
@@ -274,7 +278,7 @@ pub(crate) fn execute_branch(
         Ok(())
     }
 
-    let f: fn(u32, u32) -> bool = match instruction.id() {
+    let f: fn(u32, u32) -> bool = match instruction.id().as_u8() {
         // BEQ
         0b000 => |a, b| a == b,
         // BNE
