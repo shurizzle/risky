@@ -1,3 +1,5 @@
+use crate::num::Unsigned;
+
 const B12_MASK: u32 = bitmask(12);
 const B7_MASK: u32 = bitmask(7);
 const B6_MASK: u32 = bitmask(6);
@@ -323,24 +325,6 @@ impl From<u32> for J {
     }
 }
 
-mod __sealed {
-    pub trait Unsigned {
-        type Signed;
-    }
-
-    impl Unsigned for u8 {
-        type Signed = i8;
-    }
-
-    impl Unsigned for u16 {
-        type Signed = i16;
-    }
-
-    impl Unsigned for u32 {
-        type Signed = i32;
-    }
-}
-
 macro_rules! impl_base {
     (@def $t:ident, $base:ty) => {
         #[repr(transparent)]
@@ -379,9 +363,9 @@ macro_rules! impl_base {
 
     (@sign $t:ident, $base:ty) => {
         #[inline(always)]
-        pub const fn sign_extend(&self) -> <$base as __sealed::Unsigned>::Signed {
-            const OTHER_BITS: u32 = <$base as __sealed::Unsigned>::Signed::BITS - <$t>::BITS;
-            unsafe { core::mem::transmute::<$base, <$base as __sealed::Unsigned>::Signed>(self.0) }
+        pub const fn sign_extend(&self) -> <$base as Unsigned>::Signed {
+            const OTHER_BITS: u32 = <$base as Unsigned>::Signed::BITS - <$t>::BITS;
+            unsafe { core::mem::transmute::<$base, <$base as Unsigned>::Signed>(self.0) }
                 .wrapping_shl(OTHER_BITS).wrapping_shr(OTHER_BITS)
         }
     };

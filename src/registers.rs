@@ -1,22 +1,4 @@
-use crate::decode::U5;
-
-pub trait Zero {
-    fn zero() -> Self;
-}
-
-impl Zero for u32 {
-    #[inline(always)]
-    fn zero() -> Self {
-        0
-    }
-}
-
-impl Zero for u64 {
-    #[inline(always)]
-    fn zero() -> Self {
-        0
-    }
-}
+use crate::{decode::U5, num::Zero};
 
 #[allow(dead_code)]
 #[repr(u8)]

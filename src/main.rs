@@ -3,6 +3,8 @@ pub(crate) mod elf;
 pub(crate) mod error;
 pub(crate) mod instructions;
 pub(crate) mod mem;
+pub(crate) mod num;
+pub(crate) mod ops;
 pub(crate) mod registers;
 
 fn main() {
