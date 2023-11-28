@@ -110,6 +110,44 @@ pub trait BaseMath:
 {
 }
 
+pub trait Addw {
+    fn addw(self, other: Self) -> Self;
+}
+
+pub trait Subw {
+    fn subw(self, other: Self) -> Self;
+}
+
+pub trait Sllw {
+    fn sllw(self, other: Self) -> Self;
+}
+
+pub trait Srlw {
+    fn srlw(self, other: Self) -> Self;
+}
+
+pub trait Sraw {
+    fn sraw(self, other: Self) -> Self;
+}
+
+pub trait Addiw {
+    fn addiw(self, other: U12) -> Self;
+}
+
+pub trait Slliw {
+    fn slliw(self, other: U5) -> Self;
+}
+
+pub trait Srliw {
+    fn srliw(self, other: U5) -> Self;
+}
+
+pub trait Sraiw {
+    fn sraiw(self, other: U5) -> Self;
+}
+
+pub trait MathW: BaseMath + Addw + Subw + Sllw + Srlw + Sraw {}
+
 macro_rules! impl_ops {
     ($t:ty) => {
         impl Add for $t {
@@ -335,3 +373,50 @@ impl<T> BaseMath for T where
         + Shift
 {
 }
+
+macro_rules! forward_mathw {
+    () => {};
+    (@wrap $t:ident :: $meth:ident => ($meth32:expr) (|$name:ident| $b:expr) : $bt:ty) => {
+        impl $t for u64 {
+            #[inline(always)]
+            fn $meth(self, $name: $bt) -> Self {
+                crate::ops::Imm::imm($meth32(self as u32, $b))
+            }
+        }
+    };
+    (i12 $t:ident :: $meth:ident => $meth32:expr) => {
+        forward_mathw!(@wrap $t :: $meth => ($meth32) (|other| other) : U12);
+    };
+    (i5 $t:ident :: $meth:ident => $meth32:expr) => {
+        forward_mathw!(@wrap $t :: $meth => ($meth32) (|other| other) : U5);
+    };
+    ($t:ident :: $meth:ident => $meth32:expr) => {
+        forward_mathw!(@wrap $t :: $meth => ($meth32) (|other| other as u32) : Self);
+    };
+    (i12 $t:ident :: $meth:ident => $meth32:expr; $($tt:tt)*) => {
+        forward_mathw!(i12 $t :: $meth => $meth32);
+        forward_mathw!($($tt)*);
+    };
+    (i5 $t:ident :: $meth:ident => $meth32:expr; $($tt:tt)*) => {
+        forward_mathw!(i5 $t :: $meth => $meth32);
+        forward_mathw!($($tt)*);
+    };
+    ($t:ident :: $meth:ident => $meth32:expr; $($tt:tt)*) => {
+        forward_mathw!($t :: $meth => $meth32);
+        forward_mathw!($($tt)*);
+    };
+}
+
+forward_mathw! {
+        Addw::addw => Add::add;
+        Subw::subw => Sub::sub;
+        Sllw::sllw => Sll::sll;
+        Srlw::srlw => Srl::srl;
+        Sraw::sraw => Sra::sra;
+    i12 Addiw::addiw => Addi::addi;
+    i5  Slliw::slliw => Slli::slli;
+    i5  Srliw::srliw => Srli::srli;
+    i5  Sraiw::sraiw => Srai::srai;
+}
+
+impl MathW for u64 {}

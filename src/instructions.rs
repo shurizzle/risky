@@ -43,18 +43,45 @@ def_uconst! {
     const LH: U3 = 0b001;
     const LHU: U3 = 0b101;
     const LW: U3 = 0b010;
+    const LWU: U3 = 0b110;
+    const LD: U3 = 0b011;
     const SLLI: U10 = 0b0000000_001;
     const SRLI: U10 = 0b0000000_101;
     const SRAI: U10 = 0b0100000_101;
     const SB: U3 = 0b000;
     const SH: U3 = 0b001;
     const SW: U3 = 0b010;
+    const SD: U3 = 0b011;
     const BEQ: U3 = 0b000;
     const BNE: U3 = 0b001;
     const BLT: U3 = 0b100;
     const BGE: U3 = 0b101;
     const BLTU: U3 = 0b110;
     const BGEU: U3 = 0b111;
+
+    const ADDIW: U3 = 0b000;
+
+    const SLLIW: U10 = 0b0000000_001;
+    const SRLIW: U10 = 0b0000000_101;
+    const SRAIW: U10 = 0b0100000_101;
+
+    const ADDW: U10 = 0b0000000_000;
+    const SUBW: U10 = 0b0100000_000;
+    const SLLW: U10 = 0b0000000_001;
+    const SRLW: U10 = 0b0000000_101;
+    const SRAW: U10 = 0b0100000_101;
+}
+
+pub trait MathW: Sized {
+    fn mathw(instruction: R, regs: &mut Registers<Self>) -> Result<(), Error>;
+}
+
+pub trait ShiftIW: Sized {
+    fn shiftiw(instruction: Shift, regs: &mut Registers<Self>) -> Result<(), Error>;
+}
+
+pub trait MathIW: Sized {
+    fn mathiw(instruction: I, regs: &mut Registers<Self>) -> Result<(), Error>;
 }
 
 pub trait Math: Sized {
@@ -349,8 +376,13 @@ impl_math!(u64);
 impl_mathi!(u64);
 impl_shifti!(u64);
 impl_branch!(u64);
-impl_load!(u64);
-impl_store!(u64);
+impl_load!(u64 {
+    LWU => ops::Lwu::lwu,
+    LD => ops::Ld::ld,
+});
+impl_store!(u64 {
+    SD => ops::Sd::sd,
+});
 
 impl<T> Lui for T
 where
@@ -434,87 +466,72 @@ where
     }
 }
 
-#[inline(always)]
-pub(crate) fn execute_math<T>(instruction: R, regs: &mut Registers<T>) -> Result<(), Error>
-where
-    T: Math,
-{
-    Math::math(instruction, regs)
+impl MathIW for u64 {
+    fn mathiw(instruction: I, regs: &mut Registers<Self>) -> Result<(), Error> {
+        use crate::ops;
+
+        #[deny(unreachable_patterns)]
+        let f: fn(u64, U12) -> u64 = match instruction.id() {
+            x if x > U3::MAX => unsafe { core::hint::unreachable_unchecked() },
+            ADDIW => ops::Addiw::addiw,
+            _ => return Err(Error::InvalidOpCode),
+        };
+
+        let ZeroOrRegister::Register(reg) = instruction.rd.into() else {
+            return Err(Error::InvalidOpCode);
+        };
+        let src1 = ZeroOrRegister::from_u5(instruction.rs1).fetch(regs);
+        *regs.get_mut(reg) = f(src1, instruction.imm);
+        Ok(())
+    }
 }
 
-#[inline(always)]
-pub(crate) fn execute_mathi<T>(instruction: I, regs: &mut Registers<T>) -> Result<(), Error>
-where
-    T: MathI,
-{
-    MathI::mathi(instruction, regs)
+impl ShiftIW for u64 {
+    fn shiftiw(instruction: Shift, regs: &mut Registers<Self>) -> Result<(), Error> {
+        use crate::ops;
+
+        #[deny(unreachable_patterns)]
+        let f: fn(u64, U5) -> u64 = match instruction.id() {
+            x if x > U10::MAX => unsafe { core::hint::unreachable_unchecked() },
+            SLLIW => ops::Slliw::slliw,
+            SRLIW => ops::Srliw::srliw,
+            SRAIW => ops::Sraiw::sraiw,
+            _ => return Err(Error::InvalidOpCode),
+        };
+
+        let ZeroOrRegister::Register(dest_reg) = instruction.rd.into() else {
+            return Err(Error::InvalidOpCode);
+        };
+        let src1 = ZeroOrRegister::from_u5(instruction.rs1).fetch(regs);
+        *regs.get_mut(dest_reg) = f(src1, instruction.shamt);
+
+        Ok(())
+    }
 }
 
-#[inline(always)]
-pub(crate) fn execute_shifti<T>(instruction: Shift, regs: &mut Registers<T>) -> Result<(), Error>
-where
-    T: ShiftI,
-{
-    ShiftI::shifti(instruction, regs)
-}
+impl MathW for u64 {
+    fn mathw(instruction: R, regs: &mut Registers<Self>) -> Result<(), Error> {
+        use crate::ops;
 
-#[inline(always)]
-pub(crate) fn execute_load<T: Load>(
-    instruction: I,
-    regs: &mut Registers<T>,
-    memory: &[u8],
-) -> Result<(), Error> {
-    T::load(instruction, regs, memory)
-}
+        #[deny(unreachable_patterns)]
+        let f: fn(u64, u64) -> u64 = match instruction.id() {
+            x if x > U10::MAX => unsafe { core::hint::unreachable_unchecked() },
+            ADDW => ops::Addw::addw,
+            SUBW => ops::Subw::subw,
+            SLLW => ops::Sllw::sllw,
+            SRLW => ops::Srlw::srlw,
+            SRAW => ops::Sraw::sraw,
+            _ => return Err(Error::InvalidOpCode),
+        };
 
-#[inline(always)]
-pub(crate) fn execute_jal<T: Jal>(
-    instruction: J,
-    regs: &mut Registers<T>,
-    pc: &mut T,
-) -> Result<(), Error> {
-    T::jal(instruction, regs, pc)
-}
-
-#[inline(always)]
-pub(crate) fn execute_jalr<T: Jalr>(
-    instruction: I,
-    regs: &mut Registers<T>,
-    pc: &mut T,
-) -> Result<(), Error> {
-    T::jalr(instruction, regs, pc)
-}
-
-#[inline(always)]
-pub(crate) fn execute_store<T: Store>(
-    instruction: S,
-    regs: &mut Registers<T>,
-    memory: &mut [u8],
-) -> Result<(), Error> {
-    T::store(instruction, regs, memory)
-}
-
-#[inline(always)]
-pub(crate) fn execute_branch<T: Branch>(
-    instruction: B,
-    regs: &mut Registers<T>,
-    pc: &mut T,
-) -> Result<(), Error> {
-    T::branch(instruction, regs, pc)
-}
-
-#[inline(always)]
-pub(crate) fn execute_lui<T: Lui>(instruction: U, regs: &mut Registers<T>) -> Result<(), Error> {
-    T::lui(instruction, regs)
-}
-
-#[inline(always)]
-pub(crate) fn execute_auipc<T: Auipc>(
-    instruction: U,
-    regs: &mut Registers<T>,
-    pc: T,
-) -> Result<(), Error> {
-    T::auipc(instruction, regs, pc)
+        let ZeroOrRegister::Register(reg) = instruction.rd.into() else {
+            return Err(Error::InvalidOpCode);
+        };
+        let src1 = ZeroOrRegister::from_u5(instruction.rs1).fetch(regs);
+        let src2 = ZeroOrRegister::from_u5(instruction.rs2).fetch(regs);
+        *regs.get_mut(reg) = f(src1, src2);
+        Ok(())
+    }
 }
 
 #[allow(dead_code)]

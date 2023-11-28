@@ -1,5 +1,5 @@
 use crate::{
-    mem::{I16, U16, U32},
+    mem::{I16, I32, U16, U32, U64},
     num::{As, Bitcast, Unsigned},
 };
 
@@ -20,7 +20,15 @@ pub trait Lhu {
 }
 
 pub trait Lw {
-    fn lw(value: U32) -> Self;
+    fn lw(value: I32) -> Self;
+}
+
+pub trait Lwu {
+    fn lwu(value: U32) -> Self;
+}
+
+pub trait Ld {
+    fn ld(value: U64) -> Self;
 }
 
 pub trait Sb {
@@ -33,6 +41,10 @@ pub trait Sh {
 
 pub trait Sw {
     fn sw(self) -> U32;
+}
+
+pub trait Sd {
+    fn sd(self) -> U64;
 }
 
 pub trait Imm {
@@ -83,11 +95,33 @@ where
 
 impl<T> Lw for T
 where
+    T: Unsigned,
+    <T as Unsigned>::Signed: From<i32>,
     T: From<u32>,
 {
     #[inline(always)]
-    fn lw(value: U32) -> Self {
+    fn lw(value: I32) -> Self {
+        Bitcast::bitcast(<<T as Unsigned>::Signed as From<i32>>::from(value.as_i32()))
+    }
+}
+
+impl<T> Lwu for T
+where
+    T: From<u32>,
+{
+    #[inline(always)]
+    fn lwu(value: U32) -> Self {
         value.as_u32().into()
+    }
+}
+
+impl<T> Ld for T
+where
+    T: From<u64>,
+{
+    #[inline(always)]
+    fn ld(value: U64) -> Self {
+        value.as_u64().into()
     }
 }
 
@@ -118,6 +152,16 @@ where
     #[inline(always)]
     fn sw(self) -> U32 {
         U32::new(self.r#as())
+    }
+}
+
+impl<T> Sd for T
+where
+    T: As<u64>,
+{
+    #[inline(always)]
+    fn sd(self) -> U64 {
+        U64::new(self.r#as())
     }
 }
 
